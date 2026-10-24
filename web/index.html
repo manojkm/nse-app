@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NSE · BSE Live</title>
+  <meta name="description" content="Live NSE and BSE market dashboard powered by IndianAPI">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232a78d6'/%3E%3Cpath d='M7 21l6-6 4 4 8-9' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+  <script>
+    // Apply the saved theme before first paint to avoid a flash.
+    try { const t = localStorage.getItem("theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
+  </script>
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="topbar">
+    <div class="topbar__inner">
+      <a class="brand" href="./" aria-label="NSE BSE Live home">
+        <svg class="brand__mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8"/><path d="M7 21l6-6 4 4 8-9"/></svg>
+        <span class="brand__name">NSE · BSE <span class="brand__live">Live</span></span>
+      </a>
+
+      <form class="search" id="search-form" role="search" autocomplete="off">
+        <label class="visually-hidden" for="search-input">Search a company</label>
+        <svg class="search__icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input id="search-input" class="search__input" type="search" name="q" placeholder="Search a company, e.g. Reliance, TCS" enterkeyhint="search">
+        <kbd class="search__kbd" aria-hidden="true">/</kbd>
+      </form>
+
+      <div class="topbar__meta">
+        <span class="pill" id="market-status" title="Based on NSE hours (Mon–Fri, 9:15–15:30 IST). Exchange holidays are not included.">
+          <span class="pill__dot" aria-hidden="true"></span><span class="pill__label">Market</span>
+        </span>
+        <span class="pill pill--demo" id="demo-badge" hidden title="No ISE_API_KEY set. Showing bundled sample data, not live quotes.">Demo data</span>
+        <button class="icon-btn" id="refresh-btn" type="button" aria-label="Refresh data">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5"/></svg>
+        </button>
+        <button class="icon-btn" id="theme-btn" type="button" aria-label="Switch theme">
+          <svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+          <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="subbar">
+      <span id="updated-at" class="muted" aria-live="polite">Loading…</span>
+      <label class="switch">
+        <input type="checkbox" id="auto-refresh">
+        <span class="switch__track" aria-hidden="true"></span>
+        <span>Auto-refresh<span class="hide-sm"> every minute</span></span>
+      </label>
+    </div>
+  </header>
+
+  <main id="main" class="layout">
+    <!-- Movers -->
+    <section class="section" aria-labelledby="movers-title">
+      <div class="section__head">
+        <h2 id="movers-title">Today's movers</h2>
+        <p class="muted">Top gainers and losers by % change</p>
+      </div>
+      <div class="movers">
+        <div class="movers__col">
+          <h3 class="eyebrow eyebrow--up">▲ Top gainers</h3>
+          <div class="cards" id="gainers" aria-busy="true"></div>
+        </div>
+        <div class="movers__col">
+          <h3 class="eyebrow eyebrow--down">▼ Top losers</h3>
+          <div class="cards" id="losers" aria-busy="true"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Stock detail -->
+    <section class="section card-surface detail" id="detail" aria-labelledby="detail-title" tabindex="-1">
+      <div class="detail__head">
+        <div>
+          <p class="eyebrow" id="detail-industry">Company</p>
+          <h2 id="detail-title" class="detail__title">Select a stock</h2>
+          <p class="muted" id="detail-symbol"></p>
+        </div>
+        <div class="detail__quote" id="detail-quote"></div>
+      </div>
+
+      <div class="detail__stats" id="detail-stats"></div>
+
+      <div class="chart-toolbar">
+        <div class="segmented" role="group" aria-label="Chart period" id="period-group">
+          <button type="button" data-period="1m">1M</button>
+          <button type="button" data-period="6m">6M</button>
+          <button type="button" data-period="1yr" aria-pressed="true">1Y</button>
+          <button type="button" data-period="3yr">3Y</button>
+          <button type="button" data-period="5yr">5Y</button>
+        </div>
+        <div class="legend" id="chart-legend" aria-label="Chart legend"></div>
+        <button type="button" class="link-btn" id="chart-table-btn" aria-expanded="false" aria-controls="chart-table">View as table</button>
+      </div>
+      <figure class="chart" id="chart" aria-busy="true">
+        <div class="chart__plot" id="chart-plot"></div>
+        <div class="chart__tooltip" id="chart-tooltip" role="status" hidden></div>
+        <figcaption class="visually-hidden" id="chart-caption"></figcaption>
+      </figure>
+      <div class="table-wrap" id="chart-table" hidden></div>
+
+      <div class="detail__extra" id="detail-extra"></div>
+    </section>
+
+    <!-- Most active + 52 week -->
+    <div class="grid-2">
+      <section class="section card-surface" aria-labelledby="active-title" data-lazy="active">
+        <div class="section__head section__head--row">
+          <h2 id="active-title">Most active</h2>
+          <div class="segmented segmented--sm" role="group" aria-label="Exchange" id="active-exchange">
+            <button type="button" data-exchange="NSE" aria-pressed="true">NSE</button>
+            <button type="button" data-exchange="BSE">BSE</button>
+          </div>
+        </div>
+        <div class="table-wrap" id="active-table" aria-busy="true"></div>
+      </section>
+
+      <section class="section card-surface" aria-labelledby="w52-title" data-lazy="week52">
+        <div class="section__head section__head--row">
+          <h2 id="w52-title">52-week highs &amp; lows</h2>
+          <div class="segmented segmented--sm" role="group" aria-label="Exchange" id="w52-exchange">
+            <button type="button" data-exchange="NSE" aria-pressed="true">NSE</button>
+            <button type="button" data-exchange="BSE">BSE</button>
+          </div>
+        </div>
+        <div id="w52" class="w52" aria-busy="true"></div>
+      </section>
+    </div>
+
+    <!-- Shockers + commodities -->
+    <div class="grid-2">
+      <section class="section card-surface" aria-labelledby="shock-title" data-lazy="shockers">
+        <div class="section__head">
+          <h2 id="shock-title">Price shockers</h2>
+          <p class="muted">Sharp moves in a short period</p>
+        </div>
+        <div class="table-wrap" id="shockers-table" aria-busy="true"></div>
+      </section>
+
+      <section class="section card-surface" aria-labelledby="comm-title" data-lazy="commodities">
+        <div class="section__head">
+          <h2 id="comm-title">Commodity futures</h2>
+          <p class="muted">MCX near-month contracts</p>
+        </div>
+        <div class="table-wrap" id="commodities-table" aria-busy="true"></div>
+      </section>
+    </div>
+
+    <!-- Mutual funds -->
+    <section class="section card-surface" aria-labelledby="mf-title" data-lazy="funds">
+      <div class="section__head section__head--row">
+        <div>
+          <h2 id="mf-title">Mutual funds</h2>
+          <p class="muted">Latest NAV and trailing returns</p>
+        </div>
+        <label class="select">
+          <span class="visually-hidden">Fund category</span>
+          <select id="mf-category"></select>
+        </label>
+      </div>
+      <div class="table-wrap" id="mf-table" aria-busy="true"></div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>Data from <a href="https://indianapi.in/" rel="noopener">IndianAPI</a>. Quotes may be delayed. Not investment advice.</p>
+    <p class="muted">MCP endpoint: <code id="mcp-url">/mcp</code></p>
+  </footer>
+
+  <div class="toast" id="toast" role="alert" hidden></div>
+</body>
+</html>
