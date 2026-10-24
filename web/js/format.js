@@ -54,3 +54,17 @@ export const shortDate = (iso, long = false) => {
 
 export const time = (d = new Date()) =>
   d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+/** Signed rupee crore, sign before the symbol: "+₹1,234.50 cr", "−₹2,236.55 cr". */
+export const croreSigned = (v) => {
+  const n = toNum(v);
+  if (!Number.isFinite(n)) return "—";
+  return `${n > 0 ? "+" : n < 0 ? "−" : ""}₹${dec.format(Math.abs(n))} cr`;
+};
+
+/** Signed whole number with Indian grouping: "+45,186", "−2,534". */
+export const signedInt = (v) => {
+  const n = toNum(v);
+  if (!Number.isFinite(n)) return "—";
+  return `${n > 0 ? "+" : n < 0 ? "−" : ""}${int.format(Math.abs(Math.round(n)))}`;
+};

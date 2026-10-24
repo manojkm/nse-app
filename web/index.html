@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>NSE · BSE Live</title>
-  <meta name="description" content="Live NSE and BSE market dashboard powered by IndianAPI">
+  <meta name="description" content="NSE and BSE market dashboard: indices, FII/DII flows, option chain analytics, stock scorecards">
   <meta name="color-scheme" content="light dark">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232a78d6'/%3E%3Cpath d='M7 21l6-6 4 4 8-9' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="styles.css">
@@ -19,7 +19,7 @@
 
   <header class="topbar">
     <div class="topbar__inner">
-      <a class="brand" href="./" aria-label="NSE BSE Live home">
+      <a class="brand" href="#/market" aria-label="NSE BSE Live home">
         <svg class="brand__mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8"/><path d="M7 21l6-6 4 4 8-9"/></svg>
         <span class="brand__name">NSE · BSE <span class="brand__live">Live</span></span>
       </a>
@@ -46,131 +46,292 @@
       </div>
     </div>
     <div class="subbar">
-      <span id="updated-at" class="muted" aria-live="polite">Loading…</span>
-      <label class="switch">
-        <input type="checkbox" id="auto-refresh">
-        <span class="switch__track" aria-hidden="true"></span>
-        <span>Auto-refresh<span class="hide-sm"> every minute</span></span>
-      </label>
+      <nav class="tabs" aria-label="Sections">
+        <a href="#/market" data-nav="market">Market</a>
+        <a href="#/stock" data-nav="stock">Stock</a>
+        <a href="#/options" data-nav="options">Options</a>
+        <a href="#/flows" data-nav="flows">FII / DII</a>
+        <a href="#/ipo" data-nav="ipo">IPO &amp; News</a>
+      </nav>
+      <div class="subbar__meta">
+        <span id="updated-at" class="muted" aria-live="polite">Loading…</span>
+        <label class="switch" title="Refreshes the current tab every minute while the market is open. Uses API quota.">
+          <input type="checkbox" id="auto-refresh">
+          <span class="switch__track" aria-hidden="true"></span>
+          <span>Auto<span class="hide-sm">-refresh</span></span>
+        </label>
+      </div>
     </div>
   </header>
 
   <main id="main" class="layout">
-    <!-- Movers -->
-    <section class="section" aria-labelledby="movers-title">
-      <div class="section__head">
-        <h2 id="movers-title">Today's movers</h2>
-        <p class="muted">Top gainers and losers by % change</p>
-      </div>
-      <div class="movers">
-        <div class="movers__col">
-          <h3 class="eyebrow eyebrow--up">▲ Top gainers</h3>
-          <div class="cards" id="gainers" aria-busy="true"></div>
-        </div>
-        <div class="movers__col">
-          <h3 class="eyebrow eyebrow--down">▼ Top losers</h3>
-          <div class="cards" id="losers" aria-busy="true"></div>
-        </div>
-      </div>
-    </section>
+    <!-- ================================================================ MARKET -->
+    <div class="view" data-view="market">
+      <div class="index-strip" id="indices" aria-label="Market indices" aria-busy="true"></div>
 
-    <!-- Stock detail -->
-    <section class="section card-surface detail" id="detail" aria-labelledby="detail-title" tabindex="-1">
-      <div class="detail__head">
-        <div>
-          <p class="eyebrow" id="detail-industry">Company</p>
-          <h2 id="detail-title" class="detail__title">Select a stock</h2>
-          <p class="muted" id="detail-symbol"></p>
-        </div>
-        <div class="detail__quote" id="detail-quote"></div>
+      <div class="grid-2">
+        <section class="section card-surface" aria-labelledby="breadth-title">
+          <div class="section__head section__head--row">
+            <h2 id="breadth-title">Market breadth</h2>
+            <span class="badge">NSE official</span>
+          </div>
+          <div id="breadth" aria-busy="true"></div>
+        </section>
+        <section class="section card-surface" aria-labelledby="flows-mini-title">
+          <div class="section__head section__head--row">
+            <h2 id="flows-mini-title">Institutional flows</h2>
+            <a class="link-btn" href="#/flows">Details →</a>
+          </div>
+          <div id="flows-mini" aria-busy="true"></div>
+        </section>
       </div>
 
-      <div class="detail__stats" id="detail-stats"></div>
-
-      <div class="chart-toolbar">
-        <div class="segmented" role="group" aria-label="Chart period" id="period-group">
-          <button type="button" data-period="1m">1M</button>
-          <button type="button" data-period="6m">6M</button>
-          <button type="button" data-period="1yr" aria-pressed="true">1Y</button>
-          <button type="button" data-period="3yr">3Y</button>
-          <button type="button" data-period="5yr">5Y</button>
+      <section class="section" aria-labelledby="movers-title">
+        <div class="section__head">
+          <h2 id="movers-title">Today's movers</h2>
+          <p class="muted">Top gainers and losers by % change</p>
         </div>
-        <div class="legend" id="chart-legend" aria-label="Chart legend"></div>
-        <button type="button" class="link-btn" id="chart-table-btn" aria-expanded="false" aria-controls="chart-table">View as table</button>
-      </div>
-      <figure class="chart" id="chart" aria-busy="true">
-        <div class="chart__plot" id="chart-plot"></div>
-        <div class="chart__tooltip" id="chart-tooltip" role="status" hidden></div>
-        <figcaption class="visually-hidden" id="chart-caption"></figcaption>
-      </figure>
-      <div class="table-wrap" id="chart-table" hidden></div>
-
-      <div class="detail__extra" id="detail-extra"></div>
-    </section>
-
-    <!-- Most active + 52 week -->
-    <div class="grid-2">
-      <section class="section card-surface" aria-labelledby="active-title" data-lazy="active">
-        <div class="section__head section__head--row">
-          <h2 id="active-title">Most active</h2>
-          <div class="segmented segmented--sm" role="group" aria-label="Exchange" id="active-exchange">
-            <button type="button" data-exchange="NSE" aria-pressed="true">NSE</button>
-            <button type="button" data-exchange="BSE">BSE</button>
+        <div class="movers">
+          <div class="movers__col">
+            <h3 class="eyebrow eyebrow--up">▲ Top gainers</h3>
+            <div class="cards" id="gainers" aria-busy="true"></div>
+          </div>
+          <div class="movers__col">
+            <h3 class="eyebrow eyebrow--down">▼ Top losers</h3>
+            <div class="cards" id="losers" aria-busy="true"></div>
           </div>
         </div>
-        <div class="table-wrap" id="active-table" aria-busy="true"></div>
       </section>
 
-      <section class="section card-surface" aria-labelledby="w52-title" data-lazy="week52">
-        <div class="section__head section__head--row">
-          <h2 id="w52-title">52-week highs &amp; lows</h2>
-          <div class="segmented segmented--sm" role="group" aria-label="Exchange" id="w52-exchange">
-            <button type="button" data-exchange="NSE" aria-pressed="true">NSE</button>
-            <button type="button" data-exchange="BSE">BSE</button>
+      <div class="grid-2">
+        <section class="section card-surface" aria-labelledby="active-title" data-lazy="active">
+          <div class="section__head section__head--row">
+            <h2 id="active-title">Most active</h2>
+            <div class="segmented segmented--sm" role="group" aria-label="Exchange" id="active-exchange">
+              <button type="button" data-exchange="NSE" aria-pressed="true">NSE</button>
+              <button type="button" data-exchange="BSE">BSE</button>
+            </div>
           </div>
+          <div class="table-wrap" id="active-table" aria-busy="true"></div>
+        </section>
+
+        <section class="section card-surface" aria-labelledby="w52-title" data-lazy="week52">
+          <div class="section__head section__head--row">
+            <h2 id="w52-title">52-week highs &amp; lows</h2>
+            <div class="segmented segmented--sm" role="group" aria-label="Exchange" id="w52-exchange">
+              <button type="button" data-exchange="NSE" aria-pressed="true">NSE</button>
+              <button type="button" data-exchange="BSE">BSE</button>
+            </div>
+          </div>
+          <div id="w52" class="w52" aria-busy="true"></div>
+        </section>
+      </div>
+
+      <div class="grid-2">
+        <section class="section card-surface" aria-labelledby="shock-title" data-lazy="shockers">
+          <div class="section__head">
+            <h2 id="shock-title">Price shockers</h2>
+            <p class="muted">Sharp moves in a short period</p>
+          </div>
+          <div class="table-wrap" id="shockers-table" aria-busy="true"></div>
+        </section>
+
+        <section class="section card-surface" aria-labelledby="comm-title" data-lazy="commodities">
+          <div class="section__head">
+            <h2 id="comm-title">Commodity futures</h2>
+            <p class="muted">MCX near-month contracts</p>
+          </div>
+          <div class="table-wrap" id="commodities-table" aria-busy="true"></div>
+        </section>
+      </div>
+
+      <section class="section card-surface" aria-labelledby="mf-title" data-lazy="funds">
+        <div class="section__head section__head--row">
+          <div>
+            <h2 id="mf-title">Mutual funds</h2>
+            <p class="muted">Latest NAV and trailing returns</p>
+          </div>
+          <label class="select">
+            <span class="visually-hidden">Fund category</span>
+            <select id="mf-category"></select>
+          </label>
         </div>
-        <div id="w52" class="w52" aria-busy="true"></div>
+        <div class="table-wrap" id="mf-table" aria-busy="true"></div>
       </section>
     </div>
 
-    <!-- Shockers + commodities -->
-    <div class="grid-2">
-      <section class="section card-surface" aria-labelledby="shock-title" data-lazy="shockers">
-        <div class="section__head">
-          <h2 id="shock-title">Price shockers</h2>
-          <p class="muted">Sharp moves in a short period</p>
+    <!-- ================================================================ STOCK -->
+    <div class="view" data-view="stock" hidden>
+      <section class="section card-surface detail" id="detail" aria-labelledby="detail-title" tabindex="-1">
+        <div class="detail__head">
+          <div>
+            <p class="eyebrow" id="detail-industry">Company</p>
+            <h1 id="detail-title" class="detail__title">Search a company to begin</h1>
+            <p class="muted" id="detail-symbol"></p>
+          </div>
+          <div class="detail__quote" id="detail-quote"></div>
         </div>
-        <div class="table-wrap" id="shockers-table" aria-busy="true"></div>
+
+        <div class="detail__stats" id="detail-stats"></div>
+
+        <div class="chart-toolbar">
+          <div class="segmented" role="group" aria-label="Chart period" id="period-group">
+            <button type="button" data-period="1m">1M</button>
+            <button type="button" data-period="6m">6M</button>
+            <button type="button" data-period="1yr" aria-pressed="true">1Y</button>
+            <button type="button" data-period="3yr">3Y</button>
+            <button type="button" data-period="5yr">5Y</button>
+          </div>
+          <div class="legend" id="chart-legend" aria-label="Chart legend"></div>
+          <button type="button" class="link-btn" id="chart-table-btn" aria-expanded="false" aria-controls="chart-table">View as table</button>
+        </div>
+        <figure class="chart" id="chart" aria-busy="true">
+          <div class="chart__plot" id="chart-plot"></div>
+          <div class="chart__tooltip" id="chart-tooltip" role="status" hidden></div>
+          <figcaption class="visually-hidden" id="chart-caption"></figcaption>
+        </figure>
+        <div class="table-wrap" id="chart-table" hidden></div>
       </section>
 
-      <section class="section card-surface" aria-labelledby="comm-title" data-lazy="commodities">
-        <div class="section__head">
-          <h2 id="comm-title">Commodity futures</h2>
-          <p class="muted">MCX near-month contracts</p>
+      <div class="grid-2">
+        <section class="section card-surface" aria-labelledby="score-title">
+          <div class="section__head section__head--row">
+            <h2 id="score-title">Scorecard</h2>
+            <span id="score-overall"></span>
+          </div>
+          <div id="scorecard" aria-busy="true"></div>
+        </section>
+        <section class="section card-surface" aria-labelledby="analyst-title">
+          <div class="section__head section__head--row">
+            <h2 id="analyst-title">Analyst ratings</h2>
+            <span id="analyst-consensus"></span>
+          </div>
+          <div id="analyst" aria-busy="true"></div>
+        </section>
+      </div>
+
+      <section class="section card-surface" aria-labelledby="vp-title">
+        <div class="section__head section__head--row">
+          <div>
+            <h2 id="vp-title">Volume profile</h2>
+            <p class="muted">Where shares changed hands, by price level. Buy/sell split is estimated from up and down days.</p>
+          </div>
+          <div class="segmented segmented--sm" role="group" aria-label="Profile period" id="vp-months">
+            <button type="button" data-months="1">1M</button>
+            <button type="button" data-months="3" aria-pressed="true">3M</button>
+            <button type="button" data-months="6">6M</button>
+            <button type="button" data-months="12">1Y</button>
+          </div>
         </div>
-        <div class="table-wrap" id="commodities-table" aria-busy="true"></div>
+        <div id="volume-profile" aria-busy="true"></div>
+      </section>
+
+      <div class="grid-2">
+        <section class="section card-surface" aria-labelledby="cmp-title">
+          <div class="section__head">
+            <h2 id="cmp-title">Compare with peers</h2>
+            <p class="muted">Return and worst drop (max drawdown) over the period</p>
+          </div>
+          <form class="compare-form" id="compare-form">
+            <label class="visually-hidden" for="compare-input">Symbols to compare</label>
+            <input id="compare-input" class="input" placeholder="e.g. TCS, INFY, WIPRO" autocomplete="off">
+            <label class="select"><span class="visually-hidden">Period</span>
+              <select id="compare-months"><option value="3">3M</option><option value="6" selected>6M</option><option value="12">1Y</option><option value="24">2Y</option></select>
+            </label>
+            <button class="btn" type="submit">Compare</button>
+          </form>
+          <div id="compare" aria-live="polite"></div>
+        </section>
+        <section class="section card-surface" aria-labelledby="ca-title">
+          <div class="section__head">
+            <h2 id="ca-title">Corporate actions</h2>
+            <p class="muted">Dividends, bonuses and splits (last 5 years)</p>
+          </div>
+          <div class="table-wrap" id="corp-actions" aria-busy="true"></div>
+        </section>
+      </div>
+
+      <section class="section card-surface" id="about-card" aria-labelledby="about-title">
+        <h2 id="about-title">About &amp; news</h2>
+        <div class="detail__extra" id="detail-extra"></div>
       </section>
     </div>
 
-    <!-- Mutual funds -->
-    <section class="section card-surface" aria-labelledby="mf-title" data-lazy="funds">
-      <div class="section__head section__head--row">
-        <div>
-          <h2 id="mf-title">Mutual funds</h2>
-          <p class="muted">Latest NAV and trailing returns</p>
+    <!-- ================================================================ OPTIONS -->
+    <div class="view" data-view="options" hidden>
+      <section class="section card-surface">
+        <div class="section__head section__head--row">
+          <div>
+            <h1 class="view-title">Option chain analytics</h1>
+            <p class="muted">Open interest tells you where option sellers expect the market to stay.</p>
+          </div>
+          <span class="badge badge--warn" title="NSE has no official API for option chains and often blocks automated requests, so this may be unavailable.">nseindia.com · may be unavailable</span>
         </div>
-        <label class="select">
-          <span class="visually-hidden">Fund category</span>
-          <select id="mf-category"></select>
-        </label>
-      </div>
-      <div class="table-wrap" id="mf-table" aria-busy="true"></div>
-    </section>
+        <div class="options-toolbar">
+          <div class="segmented" role="group" aria-label="Underlying" id="oc-symbols">
+            <button type="button" data-symbol="NIFTY" aria-pressed="true">NIFTY</button>
+            <button type="button" data-symbol="BANKNIFTY">BANKNIFTY</button>
+            <button type="button" data-symbol="FINNIFTY">FINNIFTY</button>
+            <button type="button" data-symbol="MIDCPNIFTY">MIDCPNIFTY</button>
+          </div>
+          <form id="oc-stock-form" class="compare-form compare-form--inline">
+            <label class="visually-hidden" for="oc-stock">F&amp;O stock symbol</label>
+            <input id="oc-stock" class="input" placeholder="F&O stock, e.g. RELIANCE" autocomplete="off">
+            <button class="btn" type="submit">Load</button>
+          </form>
+          <label class="select"><span class="visually-hidden">Expiry</span><select id="oc-expiry"></select></label>
+        </div>
+      </section>
+      <div id="oc-body" aria-busy="true"></div>
+    </div>
+
+    <!-- ================================================================ FLOWS -->
+    <div class="view" data-view="flows" hidden>
+      <section class="section card-surface">
+        <div class="section__head section__head--row">
+          <div>
+            <h1 class="view-title">FII / DII activity</h1>
+            <p class="muted">Cash-market buying and selling by foreign (FII/FPI) and domestic (DII) institutions, ₹ crore.</p>
+          </div>
+          <span class="badge badge--warn" title="NSE has no official API for this and often blocks automated requests, so this may be unavailable.">nseindia.com · may be unavailable</span>
+        </div>
+        <div id="flows-today" aria-busy="true"></div>
+      </section>
+      <section class="section card-surface" aria-labelledby="flows-hist-title">
+        <div class="section__head section__head--row">
+          <div>
+            <h2 id="flows-hist-title">Daily net flows</h2>
+            <p class="muted">NSE publishes only the latest day, so history builds up each day you open the app.</p>
+          </div>
+          <button type="button" class="link-btn" id="flows-table-btn" aria-expanded="false">View as table</button>
+        </div>
+        <div id="flows-history" aria-busy="true"></div>
+      </section>
+    </div>
+
+    <!-- ================================================================ IPO & NEWS -->
+    <div class="view" data-view="ipo" hidden>
+      <section class="section card-surface" aria-labelledby="ipo-title">
+        <div class="section__head section__head--row">
+          <h1 id="ipo-title" class="view-title">IPOs</h1>
+          <div class="segmented segmented--sm" role="group" aria-label="IPO status" id="ipo-status">
+            <button type="button" data-status="open" aria-pressed="true">Open</button>
+            <button type="button" data-status="upcoming">Upcoming</button>
+            <button type="button" data-status="listed">Listed</button>
+          </div>
+        </div>
+        <div id="ipos" class="ipo-grid" aria-busy="true"></div>
+      </section>
+      <section class="section card-surface" aria-labelledby="news-title">
+        <h2 id="news-title">Market news</h2>
+        <div id="news" aria-busy="true"></div>
+      </section>
+    </div>
   </main>
 
   <footer class="footer">
-    <p>Data from <a href="https://indianapi.in/" rel="noopener">IndianAPI</a>. Quotes may be delayed. Not investment advice.</p>
-    <p class="muted">MCP endpoint: <code id="mcp-url">/mcp</code></p>
+    <p>Data: <a href="https://indianapi.in/" rel="noopener">IndianAPI</a>, <a href="https://www.nseindia.com/nse-mcp" rel="noopener">NSE official MCP</a> and nseindia.com (FII/DII, options). Quotes may be delayed. Not investment advice.</p>
+    <p class="muted">MCP endpoint: <code id="mcp-url">/mcp</code> · <button type="button" class="link-btn" id="usage-btn">Check API usage</button> <span id="usage"></span></p>
   </footer>
 
   <div class="toast" id="toast" role="alert" hidden></div>

@@ -270,6 +270,10 @@ def target_price(stock_id: str) -> dict[str, Any]:
     return {
         "priceTarget": {"CurrencyCode": "INR", "Mean": round(p * 1.12, 2), "High": round(p * 1.35, 2),
                         "Low": round(p * 0.86, 2), "Median": round(p * 1.1, 2), "NumberOfEstimates": 32},
+        "priceTargetSnapshots": {"PriceTargetSnapshot": [
+            {"Age": a, "Mean": round(p * f, 2)} for a, f in (("OneWeekAgo", 1.115), ("ThirtyDaysAgo", 1.09), ("SixtyDaysAgo", 1.07), ("NinetyDaysAgo", 1.05))]},
+        "recommendationSnapshots": {"RecommendationSnapshot": [
+            {"Age": a, "Mean": m} for a, m in (("OneWeekAgo", 2.32), ("ThirtyDaysAgo", 2.41), ("SixtyDaysAgo", 2.55), ("NinetyDaysAgo", 2.62))]},
         "recommendation": {"Mean": 2.3, "NumberOfRecommendations": 34, "Statistics": {"Statistic": [
             {"Recommendation": 1, "NumberOfAnalysts": 9}, {"Recommendation": 2, "NumberOfAnalysts": 13},
             {"Recommendation": 3, "NumberOfAnalysts": 8}, {"Recommendation": 4, "NumberOfAnalysts": 3},
@@ -314,4 +318,193 @@ def respond(endpoint: str, params: dict[str, Any]) -> Any:
             return target_price(params.get("stock_id", ""))
         case "stock_forecasts":
             return forecasts(**params)
+        case "indices":
+            return indices()
+        case "ipo":
+            return ipo()
+        case "news":
+            return news()
+        case "usage":
+            return usage()
     raise DemoNotFound(f"Demo mode has no data for /{endpoint}")
+
+
+# ---------------------------------------------------------------- IndianAPI extras
+
+def indices() -> dict[str, Any]:
+    rows = [("NIFTY 50", 24_853.15, 0.42, "NSI"), ("SENSEX", 81_224.75, 0.38, "BSE"), ("NIFTY BANK", 55_310.40, 0.71, "NSI"),
+            ("NIFTY IT", 35_102.85, -1.12, "NSI"), ("NIFTY MIDCAP 100", 57_420.30, 0.95, "NSI"), ("INDIA VIX", 12.84, -3.10, "NSI")]
+    return {"indices": [{"name": n, "price": f"{p:.2f}", "percentChange": f"{c:.2f}", "netChange": f"{p * c / (100 + c):.2f}",
+                         "tickerId": f"I{i:04d}", "exchangeType": x} for i, (n, p, c, x) in enumerate(rows)]}
+
+
+def ipo() -> dict[str, Any]:
+    return {
+        "open": [{"symbol": "DEMOTECH", "name": "Demo Technologies", "status": "open", "is_sme": False, "min_price": 412, "max_price": 434,
+                  "bidding_start_date": "2026-10-22", "bidding_end_date": "2026-10-27", "lot_size": 34, "issue_size": "₹1,250 Cr"}],
+        "upcoming": [{"symbol": "SAMPLEFIN", "name": "Sample Finance", "status": "upcoming", "is_sme": False,
+                      "additional_text": "Bidding dates yet to be announced"},
+                     {"symbol": "MINIGREEN", "name": "Mini Green Energy", "status": "upcoming", "is_sme": True,
+                      "bidding_start_date": "2026-10-30", "bidding_end_date": "2026-11-03", "min_price": 95, "max_price": 100}],
+        "listed": [{"symbol": "EXAMPLECO", "name": "Example Consumer", "status": "listed", "is_sme": False, "issue_price": 310,
+                    "listing_price": 362, "listing_gains": 16.8, "current_price": 377, "listing_date": "2026-10-14"}],
+    }
+
+
+def news() -> list[dict[str, Any]]:
+    items = [
+        ("IT stocks slip as US tech guidance softens", ["IT", "Earnings"]),
+        ("Banks lead gains after strong quarterly loan growth", ["Banking"]),
+        ("Crude prices rise on supply concerns; oil marketers under pressure", ["Energy", "Commodities"]),
+        ("FPIs turn net sellers for third straight session", ["FII", "Flows"]),
+        ("Auto sales hit festive-season record", ["Auto"]),
+    ]
+    return [{"title": t, "summary": "Sample headline for demo mode.", "url": "https://indianapi.in/", "pub_date": f"2026-10-24T0{i + 8}:15:00",
+             "source": "Demo News", "topics": topics} for i, (t, topics) in enumerate(items)]
+
+
+def usage() -> dict[str, Any]:
+    return {"total_requests": 214, "hard_limit": 1000, "remaining_requests": 786, "endpoint_usage": {"/trending": 61, "/stock": 48}}
+
+
+# ---------------------------------------------------------------- nseindia.com (FII/DII, options)
+
+def fii_dii() -> list[dict[str, Any]]:
+    return [
+        {"category": "DII **", "date": "24-Oct-2026", "buyValue": "15234.56", "sellValue": "11987.21", "netValue": "3247.35"},
+        {"category": "FII/FPI **", "date": "24-Oct-2026", "buyValue": "12876.40", "sellValue": "15112.95", "netValue": "-2236.55"},
+    ]
+
+
+def fii_dii_history() -> list[dict[str, Any]]:
+    rng = random.Random("fii")
+    out, d = [], date(2026, 10, 24)
+    while len(out) < 20:
+        if d.weekday() < 5:
+            out.append({"date": d.strftime("%d-%b-%Y"), "fii_net": round(rng.gauss(-600, 1800), 2), "dii_net": round(rng.gauss(900, 1300), 2)})
+        d -= timedelta(days=1)
+    return list(reversed(out))
+
+
+def option_expiries() -> list[str]:
+    return ["28-Oct-2026", "04-Nov-2026", "25-Nov-2026"]
+
+
+def option_chain(symbol: str) -> dict[str, Any]:
+    sym = symbol.strip().upper()
+    spots = {"NIFTY": (24_853.15, 50), "BANKNIFTY": (55_310.40, 100), "FINNIFTY": (26_120.6, 50), "MIDCPNIFTY": (12_940.2, 25)}
+    if sym in spots:
+        spot, step = spots[sym]
+    else:
+        r = _find(sym)
+        spot = r[4]
+        step = 10 ** max(0, len(str(int(spot))) - 2) * (5 if str(int(spot))[0] in "56789" else 2.5) / 10 * 4
+        step = max(1.0, round(step))
+    rng = random.Random(sym)
+    atm = round(spot / step) * step
+    data = []
+    for ei, expiry in enumerate(option_expiries()):
+        t = (4 + ei * 10) / 365
+        for i in range(-30, 31):
+            k = atm + i * step
+            for side in ("CE", "PE"):
+                moneyness = (k - spot) / spot
+                otm = moneyness if side == "CE" else -moneyness
+                iv = 13 + 40 * moneyness ** 2 * 100 + rng.uniform(-0.5, 0.5)
+                tv = spot * iv / 100 * math.sqrt(t) * 0.4 * math.exp(-((otm / (iv / 100 * math.sqrt(t) + 1e-9)) ** 2) / 2)
+                intrinsic = max(0.0, -otm * spot)
+                ltp = round(max(0.05, intrinsic + tv), 2)
+                # Writers pile into round strikes away from spot: calls above, puts below.
+                base = math.exp(-abs(i) / 9) * 9e4
+                writing = 2.4 if (side == "CE" and i > 0) or (side == "PE" and i < 0) else 0.7
+                round_bonus = 1.8 if k % (step * 10) == 0 else 1.25 if k % (step * 2) == 0 else 1
+                oi = int(base * writing * round_bonus * rng.uniform(0.7, 1.3) / (1 + ei))
+                coi = int(oi * rng.uniform(-0.15, 0.35))
+                data.append({
+                    "strikePrice": k, "expiryDate": expiry, "optionType": side, "openInterest": oi, "changeinOpenInterest": coi,
+                    "totalTradedVolume": int(oi * rng.uniform(2, 9)), "impliedVolatility": round(iv, 2), "lastPrice": ltp,
+                    "change": round(ltp * rng.uniform(-0.25, 0.25), 2), "underlyingValue": spot, "underlying": sym,
+                })
+    return {"data": data, "timestamp": "24-Oct-2026 15:30:00"}
+
+
+# ---------------------------------------------------------------- NSE official MCP (Bhavcopy)
+
+def nse_history(symbol: str, months: int = 3) -> dict[str, Any]:
+    r = _find(symbol)
+    rng = random.Random(r[0] + "ohlc")
+    days, d = [], date(2026, 10, 23)
+    while len(days) < months * 21:
+        if d.weekday() < 5:
+            days.append(d)
+        d -= timedelta(days=1)
+    days.reverse()
+    walk = [0.0]
+    for _ in days[1:]:
+        walk.append(walk[-1] + rng.gauss(0, 0.015))
+    closes = [r[4] * math.exp(w - walk[-1]) for w in walk]
+    data, prev = [], closes[0]
+    for day, close in zip(days, closes):
+        op = prev * (1 + rng.gauss(0, 0.004))
+        hi = max(op, close) * (1 + abs(rng.gauss(0, 0.007)))
+        lo = min(op, close) * (1 - abs(rng.gauss(0, 0.007)))
+        vol = int(r[6] * rng.uniform(0.5, 1.6) * (1.8 if abs(close / prev - 1) > 0.02 else 1))
+        data.append({"date": day.isoformat(), "open": round(op, 2), "high": round(hi, 2), "low": round(lo, 2),
+                     "close": round(close, 2), "prevClose": round(prev, 2), "volume": vol})
+        prev = close
+    return {"symbol": r[0], "from_date": data[0]["date"], "to_date": data[-1]["date"], "trading_days": len(data), "data": data}
+
+
+def breadth() -> dict[str, Any]:
+    return {"date": "2026-10-23", "total_stocks": 2_412, "advances": 1_486, "declines": 851, "unchanged": 75,
+            "ad_ratio": 1.75, "total_volume": 4_812_334_120}
+
+
+def volume_analysis(symbol: str) -> dict[str, Any]:
+    h = nse_history(symbol, 3)["data"]
+    vols = [x["volume"] for x in h]
+    avg = sum(vols) / len(vols)
+    spikes = [x["date"] for x in h if x["volume"] > 2 * avg]
+    return {"symbol": h and _find(symbol)[0], "avg_volume": round(avg), "max_volume": max(vols), "min_volume": min(vols),
+            "last_volume": vols[-1], "last_vs_avg_pct": round((vols[-1] / avg - 1) * 100, 1), "volume_spike_days": spikes,
+            "recent_5_days": [{"date": x["date"], "volume": x["volume"]} for x in h[-5:]]}
+
+
+def nse_week52(symbol: str) -> dict[str, Any]:
+    r = _find(symbol)
+    pos = (r[4] - r[7]) / (r[8] - r[7]) * 100
+    return {"symbol": r[0], "last_close": r[4], "52w_high": r[8], "52w_high_date": "2026-06-11", "52w_low": r[7],
+            "52w_low_date": "2026-01-27", "position_in_range_pct": round(pos, 1),
+            "from_52w_high_pct": round((r[4] / r[8] - 1) * 100, 1), "from_52w_low_pct": round((r[4] / r[7] - 1) * 100, 1)}
+
+
+def compare(symbols: list[str], months: int = 6) -> dict[str, Any]:
+    stocks = []
+    for sym in symbols:
+        try:
+            r = _find(sym)
+        except DemoNotFound:
+            continue
+        rng = random.Random(r[0] + str(months))
+        ret = rng.uniform(-18, 32)
+        stocks.append({"symbol": r[0], "start_price": round(r[4] / (1 + ret / 100), 2), "end_price": r[4],
+                       "return_pct": round(ret, 2), "max_drawdown": round(-rng.uniform(4, 22), 2), "trading_days": months * 21})
+    stocks.sort(key=lambda s: s["return_pct"], reverse=True)
+    return {"from_date": "2026-04-23", "to_date": "2026-10-23", "months": months, "stocks": stocks}
+
+
+def corporate_actions(symbol: str) -> dict[str, Any]:
+    r = _find(symbol)
+    actions = [
+        {"exDate": "2026-08-12", "actionType": "DIVIDEND", "purpose": "Final Dividend - Rs 10 Per Share", "adjustmentFactor": 1},
+        {"exDate": "2025-08-14", "actionType": "DIVIDEND", "purpose": "Final Dividend - Rs 9 Per Share", "adjustmentFactor": 1},
+        {"exDate": "2024-10-28", "actionType": "BONUS", "purpose": "Bonus 1:1", "adjustmentFactor": 0.5},
+    ]
+    return {"symbol": r[0], "count": len(actions), "actions": actions}
+
+
+def lookup(query: str) -> dict[str, Any]:
+    q = query.lower()
+    res = [{"symbol": r[0], "last_close": r[4], "pct_change": r[5], "last_date": "2026-10-23"}
+           for r in _STOCKS if q in r[0].lower() or q in r[1].lower()]
+    return {"count": len(res), "results": res}

@@ -17,21 +17,23 @@ from starlette.responses import JSONResponse, Response
 from starlette.staticfiles import StaticFiles
 
 from . import __version__
-from .api import MarketData, create_source
 from .api_errors import APIError
 from .config import PROJECT_ROOT, Settings
+from .sources import Sources, create_sources
 from .tools import TOOLS, ToolSpec
 
 logger = logging.getLogger("nse_mcp")
 
 INSTRUCTIONS = (
-    "Live Indian stock market data (NSE & BSE) from IndianAPI. Use get_stock_data for one company, "
-    "get_trending_stocks / get_nse_most_active / get_bse_most_active for market overview, and "
-    "get_historical_data for price history. Prices are in INR."
+    "Indian stock market data (NSE & BSE). Prices are in INR. "
+    "Market overview: get_indices, get_market_breadth, get_trending_stocks, get_nse_most_active. "
+    "One company: get_stock_data, get_stock_scorecard, get_analyst_view, get_volume_profile, get_historical_data. "
+    "Institutions and derivatives: get_fii_dii, get_option_chain (NIFTY, BANKNIFTY or an F&O stock). "
+    "Tools that take `symbol` expect an NSE symbol such as RELIANCE or TCS. Outputs describe data, not advice."
 )
 
 
-def _mcp_tool(spec: ToolSpec, source: MarketData):
+def _mcp_tool(spec: ToolSpec, source: Sources):
     """Wrap a ToolSpec as an MCP tool function with the same parameters, returning JSON text."""
 
     @functools.wraps(spec.fn)
@@ -51,8 +53,8 @@ def _mcp_tool(spec: ToolSpec, source: MarketData):
     return run
 
 
-def build_mcp(settings: Settings, source: MarketData | None = None) -> tuple[MCPServer, MarketData]:
-    source = source or create_source(settings)
+def build_mcp(settings: Settings, source: Sources | None = None) -> tuple[MCPServer, Sources]:
+    source = source or create_sources(settings)
     mcp = MCPServer(
         name="nse-bse-market",
         title="NSE / BSE Market Data",
@@ -78,12 +80,25 @@ def _coerce_params(spec: ToolSpec, query: dict[str, str]) -> dict[str, Any]:
             if param.default is inspect.Parameter.empty:
                 raise ValueError(f"Missing required parameter '{param.name}'.")
             continue
-        if typing.get_origin(param.annotation) is typing.Literal:
-            allowed = typing.get_args(param.annotation)
-            if value not in allowed:
-                raise ValueError(f"'{param.name}' must be one of: {', '.join(allowed)}.")
-        args[param.name] = value.strip()
+        args[param.name] = _convert(param.name, param.annotation, value.strip())
     return args
+
+
+def _convert(name: str, annotation: Any, value: str) -> Any:
+    if typing.get_origin(annotation) is typing.Literal:
+        allowed = typing.get_args(annotation)
+        for a in allowed:
+            if str(a) == value:
+                return a
+        raise ValueError(f"'{name}' must be one of: {', '.join(map(str, allowed))}.")
+    kinds = set(typing.get_args(annotation)) or {annotation}
+    for kind in (int, float):
+        if kind in kinds:
+            try:
+                return kind(value)
+            except ValueError:
+                raise ValueError(f"'{name}' must be a number.") from None
+    return value
 
 
 def _tool_info(spec: ToolSpec) -> dict[str, Any]:
@@ -98,7 +113,7 @@ def _tool_info(spec: ToolSpec) -> dict[str, Any]:
     return {"name": spec.name, "title": spec.title, "group": spec.group, "description": spec.description, "params": params}
 
 
-def build_http_app(settings: Settings, source: MarketData | None = None) -> Starlette:
+def build_http_app(settings: Settings, source: Sources | None = None) -> Starlette:
     mcp, source = build_mcp(settings, source)
 
     @mcp.custom_route("/health", methods=["GET"])
