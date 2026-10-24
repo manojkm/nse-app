@@ -1,7 +1,8 @@
 import { callTool, state } from "./api.js";
 import { lineChart } from "./chart.js";
 import { $, $$, empty, errorBox, h, mount, segmented, skeleton, toast } from "./dom.js";
-import { compact, direction, integer, money, number, pct, shortDate, symbolOf, time, toNum } from "./format.js";
+import { byExchange, commodity, stock } from "./normalize.js";
+import { compact, direction, integer, money, number, pct, shortDate, time, toNum } from "./format.js";
 
 const store = {
   get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
@@ -81,17 +82,18 @@ async function section(target, kind, load, render) {
 
 // ---------------------------------------------------------------- movers
 
-function stockCard(row) {
-  const symbol = symbolOf(row.ric || row.ticker_id || row.ticker);
-  const company = row.company_name || row.company;
+function stockCard(raw) {
+  const row = stock(raw);
+  const symbol = row.title;
+  const company = row.name;
   const card = h("button", {
     type: "button", class: "stock-card", dataset: { symbol },
-    "aria-label": `${company}, ${money(row.price)}, ${pct(row.percent_change)}. Show details.`,
-    onclick: () => openStock(company, symbol),
+    "aria-label": `${company}, ${money(row.price)}, ${pct(row.change)}. Show details.`,
+    onclick: () => openStock(company, row.symbol),
   },
   h("span", { class: "stock-card__sym" }, symbol),
   h("span", { class: "stock-card__name" }, company),
-  h("span", { class: "stock-card__row" }, h("span", { class: "stock-card__price" }, money(row.price)), chip(row.percent_change)));
+  h("span", { class: "stock-card__row" }, h("span", { class: "stock-card__price" }, money(row.price)), chip(row.change)));
   return card;
 }
 
@@ -108,7 +110,7 @@ function loadMovers() {
       mount(gainers, g.length ? g.map(stockCard) : empty("No gainers right now."));
       mount(losers, l.length ? l.map(stockCard) : empty("No losers right now."));
       markSelected();
-      if (!ui.selected && g[0]) openStock(g[0].company_name || g[0].company, symbolOf(g[0].ric || g[0].ticker_id), { scroll: false });
+      if (!ui.selected && g[0]) { const first = stock(g[0]); openStock(first.name, first.symbol, { scroll: false }); }
     })
     .catch((err) => {
       mount(gainers, errorBox(err.message, loadMovers));
@@ -149,7 +151,7 @@ async function openStock(query, symbolHint, { scroll = true } = {}) {
   }
   if (ui.selected?.query !== query) return; // a newer selection won
 
-  const symbol = data.tickerId || symbolHint || query;
+  const symbol = data.tickerId || data.companyProfile?.exchangeCodeNse || symbolHint || query;
   ui.selected = { query, symbol };
   markSelected();
   renderDetail(data, symbol);
@@ -163,7 +165,7 @@ function renderDetail(d, symbol) {
   const change = d.percentChange;
   $("#detail-title").textContent = d.companyName || symbol;
   $("#detail-industry").textContent = d.industry || "Company";
-  $("#detail-symbol").textContent = `NSE: ${symbol}`;
+  $("#detail-symbol").textContent = /^[A-Z0-9&-]+$/.test(symbol) ? `NSE: ${symbol}` : "";
   document.title = `${symbol} ${money(nse ?? bse)} · NSE · BSE Live`;
 
   mount($("#detail-quote"),
@@ -299,13 +301,13 @@ async function loadChart() {
 const loaders = {
   active: () => section($("#active-table"), "row",
     () => callTool(ui.exchange === "NSE" ? "get_nse_most_active" : "get_bse_most_active"),
-    (rows) => (rows?.length ? table([
-      { label: "Stock", render: (r) => nameCell(symbolOf(r.ticker), r.company), value: (r) => symbolOf(r.ticker) },
+    (data) => { const rows = byExchange(data, ui.exchange).map(stock); return rows.length ? table([
+      { label: "Stock", render: (r) => nameCell(r.title, r.subtitle), value: (r) => r.title },
       { label: "Price", align: "r", render: (r) => money(r.price), value: (r) => toNum(r.price) },
-      { label: "Change", align: "r", render: (r) => chip(r.percent_change), value: (r) => toNum(r.percent_change) },
+      { label: "Change", align: "r", render: (r) => chip(r.change), value: (r) => toNum(r.change) },
       { label: "Volume", align: "r", render: (r) => compact(r.volume), value: (r) => toNum(r.volume) },
-    ], rows, { label: `${ui.exchange} most active`, initialSort: 3, onRow: (r) => openStock(r.company, symbolOf(r.ticker)) })
-      : empty("No data. The market may be closed."))),
+    ], rows, { label: `${ui.exchange} most active`, initialSort: 3, onRow: (r) => openStock(r.name, r.symbol) })
+      : empty("No data. The market may be closed."); }),
 
   week52: () => section($("#w52"), "row", () => callTool("get_52_week_high_low"), (data) => {
     ui.w52Data = data;
@@ -313,24 +315,27 @@ const loaders = {
   }),
 
   shockers: () => section($("#shockers-table"), "row", () => callTool("get_price_shockers"),
-    (rows) => {
-      const list = Array.isArray(rows) ? rows : rows?.NSE_PriceShocker ?? rows?.BSE_PriceShocker ?? [];
+    (data) => {
+      const list = byExchange(data, "NSE").map(stock);
       return list.length ? table([
-        { label: "Stock", render: (r) => nameCell(symbolOf(r.ticker), r.company), value: (r) => symbolOf(r.ticker) },
+        { label: "Stock", render: (r) => nameCell(r.title, r.subtitle), value: (r) => r.title },
         { label: "Price", align: "r", render: (r) => money(r.price), value: (r) => toNum(r.price) },
-        { label: "Change", align: "r", render: (r) => chip(r.percent_change), value: (r) => Math.abs(toNum(r.percent_change)) },
-        { label: "Day range", align: "r", hideSm: true, render: (r) => `${number(r.low)} – ${number(r.high)}` },
-      ], list, { label: "Price shockers", initialSort: 2, onRow: (r) => openStock(r.company, symbolOf(r.ticker)) })
+        { label: "Change", align: "r", render: (r) => chip(r.change), value: (r) => Math.abs(toNum(r.change)) },
+        { label: "Volume", align: "r", hideSm: true, render: (r) => compact(r.volume), value: (r) => toNum(r.volume) },
+      ], list, { label: "Price shockers", initialSort: 2, onRow: (r) => openStock(r.name, r.symbol) })
         : empty("No sharp moves right now.");
     }),
 
   commodities: () => section($("#commodities-table"), "row", () => callTool("get_commodities"),
-    (rows) => (rows?.length ? table([
-      { label: "Contract", render: (r) => nameCell(r.commoditySymbol, r.expiryDate ? `Exp ${r.expiryDate}` : ""), value: (r) => r.commoditySymbol },
-      { label: "LTP", align: "r", render: (r) => h("span", {}, money(r.lastTradedPrice), h("span", { class: "muted" }, r.priceUnit ? ` /${r.priceUnit}` : "")), value: (r) => toNum(r.lastTradedPrice) },
-      { label: "Change", align: "r", render: (r) => chip(r.percentageChange), value: (r) => toNum(r.percentageChange) },
-      { label: "Open int.", align: "r", hideSm: true, render: (r) => integer(r.openInterest), value: (r) => toNum(r.openInterest) },
-    ], rows, { label: "Commodity futures" }) : empty("No commodity data right now."))),
+    (data) => {
+      const rows = (Array.isArray(data) ? data : []).map(commodity);
+      return rows.length ? table([
+        { label: "Contract", render: (r) => nameCell(r.symbol, r.expiry ? `Exp ${r.expiry}` : ""), value: (r) => r.symbol },
+        { label: "LTP", align: "r", render: (r) => h("span", {}, money(r.price), r.unit ? h("span", { class: "muted" }, ` /${r.unit}`) : null), value: (r) => toNum(r.price) },
+        { label: "Change", align: "r", render: (r) => chip(r.change), value: (r) => toNum(r.change) },
+        { label: "Open int.", align: "r", hideSm: true, render: (r) => integer(r.openInterest), value: (r) => toNum(r.openInterest) },
+      ], rows, { label: "Commodity futures" }) : empty("No commodity data right now.");
+    }),
 
   funds: () => section($("#mf-table"), "row", () => callTool("get_mutual_funds"), (data) => {
     ui.mfData = data;
@@ -348,16 +353,19 @@ const loaders = {
 
 function renderW52() {
   const side = ui.w52Data?.[`${ui.w52Exchange}_52WeekHighLow`] ?? {};
-  const list = (title, cls, rows, key) => h("div", {},
+  const list = (title, cls, raw, key) => {
+    const rows = (Array.isArray(raw) ? raw : []).filter((r) => r && typeof r === "object").map(stock);
+    return h("div", {},
     h("h3", { class: `eyebrow ${cls}` }, title),
-    rows?.length ? h("ul", {}, rows.slice(0, 6).map((r) => h("li", {},
-      h("button", { class: "row-btn cell-name", type: "button", onclick: () => openStock(r.company, symbolOf(r.ticker)) },
-        h("strong", {}, symbolOf(r.ticker)), h("span", {}, r.company)),
+    rows.length ? h("ul", {}, rows.slice(0, 6).map((r) => h("li", {},
+      h("button", { class: "row-btn cell-name", type: "button", onclick: () => openStock(r.name, r.symbol) },
+        h("strong", {}, r.title), r.subtitle ? h("span", {}, r.subtitle) : null),
       h("span", { class: "r num" }, money(r.price), h("div", { class: "muted" }, `52W ${money(r[key])}`)))))
       : empty("None right now (often empty when the market is closed)."));
+  };
   return [
-    list("▲ Near 52-week high", "eyebrow--up", side.high52Week, "52_week_high"),
-    list("▼ Near 52-week low", "eyebrow--down", side.low52Week, "52_week_low"),
+    list("▲ Near 52-week high", "eyebrow--up", side.high52Week, "yearHigh"),
+    list("▼ Near 52-week low", "eyebrow--down", side.low52Week, "yearLow"),
   ];
 }
 

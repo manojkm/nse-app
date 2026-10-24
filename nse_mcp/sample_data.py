@@ -95,49 +95,47 @@ def week52() -> dict[str, Any]:
     near_high = sorted(_STOCKS, key=lambda r: r[4] / r[8], reverse=True)[:4]
     near_low = sorted(_STOCKS, key=lambda r: r[4] / r[7])[:4]
 
-    def side(exchange: str) -> dict[str, Any]:
-        suffix = ".NS" if exchange == "NSE" else ".BO"
-        return {
-            "high52Week": [{"ticker": r[0] + suffix, "company": r[1], "price": r[4], "52_week_high": r[8]} for r in near_high],
-            "low52Week": [{"ticker": r[0] + suffix, "company": r[1], "price": r[4], "52_week_low": r[7]} for r in near_low],
-        }
+    def row(r, key, value):
+        return {"tickerId": f"S{_STOCKS.index(r):07d}", "displayName": r[1], "price": f"{r[4]:.2f}",
+                "percentChange": f"{r[5]:.2f}", key: f"{value:.2f}", "volume": str(r[6])}
 
-    return {"BSE_52WeekHighLow": side("BSE"), "NSE_52WeekHighLow": side("NSE")}
+    side = {
+        "high52Week": [row(r, "yearHigh", r[8]) for r in near_high],
+        "low52Week": [row(r, "yearLow", r[7]) for r in near_low],
+    }
+    return {"BSE_52WeekHighLow": side, "NSE_52WeekHighLow": side}
 
 
-def price_shockers() -> list[dict[str, Any]]:
+def price_shockers() -> dict[str, Any]:
     rows = sorted(_STOCKS, key=lambda r: abs(r[5]), reverse=True)[:5]
-    return [{k: v for k, v in _quote(r).items() if not k.startswith("52")} for r in rows]
+    items = [
+        {"tickerId": f"S{i:07d}", "displayName": r[1], "price": f"{r[4]:.2f}", "percentChange": f"{r[5]:.2f}",
+         "averagePrice": f"{r[4] * 0.97:.2f}", "deviation": f"{abs(r[5]) * 3:.2f}", "volume": str(r[6]),
+         "overallRating": "Bullish" if r[5] > 0 else "Bearish"}
+        for i, r in enumerate(rows)
+    ]
+    return {"BSE_PriceShocker": items, "NSE_PriceShocker": items}
 
 
 def commodities() -> list[dict[str, Any]]:
     items = [
-        ("GOLD", "10 GRMS", 76_412.0, 0.58, 1, "05 Dec 2026"),
-        ("SILVER", "KGS", 91_850.0, -1.12, 30, "05 Dec 2026"),
-        ("CRUDEOIL", "BBL", 5_812.0, 1.94, 100, "18 Nov 2026"),
-        ("NATURALGAS", "MMBTU", 248.6, -2.31, 1250, "25 Nov 2026"),
-        ("COPPER", "KGS", 862.35, 0.37, 2500, "28 Nov 2026"),
-        ("ALUMINIUM", "KGS", 236.75, -0.73, 5000, "28 Nov 2026"),
-        ("ZINC", "KGS", 281.10, 0.12, 5000, "28 Nov 2026"),
+        ("GOLD", 76_412.0, 0.58, "05 Dec 2026"),
+        ("SILVER", 91_850.0, -1.12, "05 Dec 2026"),
+        ("CRUDEOIL", 5_812.0, 1.94, "18 Nov 2026"),
+        ("NATURALGAS", 248.6, -2.31, "25 Nov 2026"),
+        ("COPPER", 862.35, 0.37, "28 Nov 2026"),
+        ("ALUMINIUM", 236.75, -0.73, "28 Nov 2026"),
+        ("ZINC", 281.10, 0.12, "28 Nov 2026"),
     ]
     out = []
-    for i, (sym, unit, ltp, pct, size, expiry) in enumerate(items):
+    for i, (sym, ltp, pct, expiry) in enumerate(items):
         change = round(ltp * pct / (100 + pct), 2)
         out.append({
-            "contractId": f"DEMO{i:03d}",
-            "commoditySymbol": sym,
-            "expiryDate": expiry,
-            "lastTradedPrice": ltp,
-            "openingPrice": round(ltp - change * 0.5, 2),
-            "highPrice": round(ltp * 1.009, 2),
-            "lowPrice": round(ltp * 0.991, 2),
-            "closingPrice": round(ltp - change, 2),
-            "totalVolume": 1000 + i * 1371,
-            "openInterest": 800 + i * 911,
-            "priceUnit": unit,
-            "contractSize": size,
-            "priceChange": change,
-            "percentageChange": pct,
+            "product": sym, "expiry": expiry, "product_month": "NOV2026",
+            "last_traded_price": f"{ltp:.2f}", "open_price": f"{ltp - change * 0.5:.2f}",
+            "high_price": f"{ltp * 1.009:.2f}", "low_price": f"{ltp * 0.991:.2f}", "close_price": f"{ltp - change:.2f}",
+            "total_quantity_traded": str(1000 + i * 1371), "open_interest": str(800 + i * 911),
+            "change": change, "per_change": pct,
         })
     return out
 
