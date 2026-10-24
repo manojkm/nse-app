@@ -16,7 +16,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.staticfiles import StaticFiles
 
-from . import __version__
+from . import __version__, analytics, imports
 from .api_errors import APIError
 from .config import PROJECT_ROOT, Settings
 from .sources import Sources, create_sources
@@ -142,6 +142,52 @@ def build_http_app(settings: Settings, source: Sources | None = None) -> Starlet
             logger.exception("Tool %s failed", spec.name)
             return JSONResponse({"error": "Unexpected server error."}, status_code=500)
         return JSONResponse({"demo": source.demo, "data": data}, headers={"Cache-Control": "no-store"})
+
+    async def read_csv(request: Request) -> str:
+        body = await request.body()
+        if len(body) > imports.MAX_BYTES:
+            raise imports.ImportProblem("File is too large (max 3 MB).")
+        for enc in ("utf-8-sig", "cp1252"):
+            try:
+                return body.decode(enc)
+            except UnicodeDecodeError:
+                continue
+        raise imports.ImportProblem("Couldn't read the file as text. Is it a CSV?")
+
+    @mcp.custom_route("/api/import/option-chain", methods=["POST"])
+    async def import_option_chain(request: Request) -> Response:
+        q = request.query_params
+        try:
+            spot = float(q["spot"]) if q.get("spot") else None
+        except ValueError:
+            return JSONResponse({"error": "Spot must be a number."}, status_code=400)
+        try:
+            parsed = imports.parse_option_chain_csv(await read_csv(request), filename=q.get("filename", ""),
+                                                    symbol=q.get("symbol", ""), expiry=q.get("expiry", ""), spot=spot)
+            symbol = parsed["symbol"] or q.get("symbol", "").upper()
+            if not symbol:
+                raise imports.ImportProblem("Couldn't tell which symbol this is from the file name. Enter it and try again.")
+            payload = {"data": parsed["data"]}
+            result = analytics.option_chain_analysis(payload, symbol)
+        except (imports.ImportProblem, ValueError) as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        source.save_chain_import(symbol, {"payload": payload, "filename": q.get("filename", ""), "expiry": parsed["expiry"]})
+        result |= {"source": f"Imported CSV ({q.get('filename') or symbol})", "spot_estimated": parsed["spot"] is None}
+        return JSONResponse({"demo": source.demo, "data": result})
+
+    @mcp.custom_route("/api/import/fii-dii", methods=["POST"])
+    async def import_fii_dii(request: Request) -> Response:
+        try:
+            days = imports.parse_fii_dii_csv(await read_csv(request))
+        except imports.ImportProblem as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        history = source.fii_history()
+        for day in days:
+            history = source.save_fii_day(day)
+        latest = analytics.fii_dii_summary(analytics.day_from_history(
+            next(h for h in history if h["date"] == days[-1]["date"])))
+        return JSONResponse({"demo": source.demo, "data": {**latest, "history": history, "imported_days": len(days),
+                                                           "source": "Imported CSV"}})
 
     app = mcp.streamable_http_app(streamable_http_path="/mcp", stateless_http=True, host=settings.host)
     web_dir = PROJECT_ROOT / "web"

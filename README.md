@@ -22,22 +22,20 @@ Based on [GirishKumarDV/Live-NSE-BSE-MCP](https://github.com/GirishKumarDV/Live-
 
 ## Getting FII/DII and option-chain data
 
-NSE has no official API for FII/DII or option chains, and nseindia.com blocks automated requests with bot protection. This app makes plain, honestly identified requests and **does not try to get around that protection**. So with live data, the Options and FII/DII tabs will usually show "unavailable". All the analytics (PCR, max pain, OI build-up, flow summaries) are built and tested, and work in demo mode (`--demo`).
+NSE has no official API for FII/DII or option chains, and nseindia.com blocks automated requests. This app **does not try to get around that**. Instead you download NSE's own CSV in your browser and drop it into the dashboard:
 
-Official ways to get this data:
+**Option chain**
+1. Open [nseindia.com/option-chain](https://www.nseindia.com/option-chain), pick the index/stock and expiry.
+2. Click **Download (.csv)**.
+3. In the dashboard's **Options** tab, drop the file on the importer (optionally type the spot price for a more accurate max pain/ATM).
 
-- **Option chains:** broker APIs give option chains to their account holders, e.g. Upstox, Dhan, Zerodha Kite Connect, Angel One SmartAPI. A broker adapter can plug into `nse_mcp/nse_site.py`, since the analytics already accept the standard strike / CE / PE format.
-- **FII/DII:** NSE publishes the daily figures on its website for people to read; NSDL publishes FPI flows at fpi.nsdl.co.in.
+**FII / DII**
+1. Open [NSE's FII/DII report](https://www.nseindia.com/reports/fii-dii) and click the CSV download.
+2. Drop it into the **FII / DII** tab. Every import adds to your saved history.
 
-**About footprint charts:** true footprint charts need tick-by-tick trades with buyer/seller side. That data isn't publicly available from any of these sources. The **volume profile** is the closest honest alternative: it shows where volume traded by price (point of control, value area), with volume split into up-day vs down-day.
+Imports are saved under `data/` (git-ignored), and the MCP tools `get_option_chain` and `get_fii_dii` use them too, so Claude can analyse the latest file you imported. Columns are matched by name, so small layout changes on NSE's side shouldn't break the import; if one does, the error says which column was missing.
 
-![Market view](docs/dashboard.png)
-
-![Option chain analytics](docs/options.png)
-
-![Stock scorecard and analyst ratings](docs/stock-insights.png)
-
----
+For live, auto-refreshing option chains, connect a broker API you hold an account with (e.g. Upstox, Angel One SmartAPI). The analytics already accept the standard strike / CE / PE format.
 
 ## 1. Install
 
@@ -191,7 +189,8 @@ nse_mcp/
   sources.py      bundles the three data sources
   api.py          IndianAPI client (+ cache) and demo source
   nse_official.py client for NSE's official MCP servers
-  nse_site.py     nseindia.com client (FII/DII, option chain)
+  nse_site.py     nseindia.com client (FII/DII, option chain; usually blocked)
+  imports.py      parses NSE's option-chain and FII/DII CSV downloads
   sample_data.py  demo-mode data
   config.py       settings from env / .env
 web/              dashboard (plain HTML/CSS/ES modules, no build step)

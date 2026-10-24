@@ -1,4 +1,5 @@
-import { callTool } from "../api.js";
+import { callTool, uploadCsv } from "../api.js";
+import { importer, nseLink } from "../importer.js";
 import { $, $$, empty, errorBox, h, mount, segmented, skeleton } from "../dom.js";
 import { compact, integer, number, signedInt as signed } from "../format.js";
 import { go } from "../router.js";
@@ -17,16 +18,59 @@ async function load() {
   try {
     d = await callTool("get_option_chain", { symbol: ui.symbol, expiry: ui.expiry });
   } catch (err) {
-    if (token === ui.token) mount(body, errorBox(err.message, load));
+    if (token !== ui.token) return;
+    setExpiries([]);
+    // Live NSE data is usually unavailable, so lead with the import rather than an error.
+    mount(body, h("section", { class: "section card-surface" },
+      h("p", { class: "notice" }, err.status === 404 ? `No ${ui.symbol} option chain yet. Import NSE's CSV to analyse it.` : err.message),
+      importPanel()));
     return;
   }
   if (token !== ui.token) return;
   ui.data = d;
   ui.expiry = d.expiry;
-  const sel = $("#oc-expiry");
-  sel.replaceChildren(...(d.expiries ?? []).map((e) => h("option", { value: e }, e)));
-  sel.value = d.expiry;
+  setExpiries(d.expiries, d.expiry);
   render();
+}
+
+const pcrLabel = (p) => (p === null || p === undefined ? "—" : p >= 1.3 ? "Bullish tilt" : p >= 0.9 ? "Balanced" : p >= 0.7 ? "Mild bearish tilt" : "Bearish tilt");
+
+function setExpiries(list, value) {
+  const sel = $("#oc-expiry");
+  sel.replaceChildren(...(list ?? []).map((e) => h("option", { value: e }, e)));
+  sel.closest("label").hidden = !sel.options.length;
+  if (value) sel.value = value;
+}
+
+export function importPanel() {
+  return importer({
+    title: "Import an option chain from NSE",
+    intro: "NSE doesn't allow automated access to option chains, but you can download the table yourself and drop it here.",
+    steps: [
+      h("span", {}, "Open ", nseLink("https://www.nseindia.com/option-chain", "nseindia.com/option-chain"), " in your browser."),
+      "Pick the index or stock and the expiry.",
+      "Click “Download (.csv)” above the table.",
+      "Drop the file here. Adding the spot price makes max pain and ATM more accurate.",
+    ],
+    fields: [
+      { name: "symbol", label: "Symbol (if not in file name)", placeholder: ui.symbol },
+      { name: "spot", label: "Spot price (optional)", placeholder: "e.g. 24853.15", inputmode: "decimal" },
+    ],
+    async onFile(file, v) {
+      const d = await uploadCsv("api/import/option-chain", file, { symbol: v.symbol, spot: v.spot });
+      ui.symbol = d.symbol;
+      ui.data = d;
+      ui.expiry = d.expiry;
+      ui.token++;
+      history.replaceState(null, "", `#/options/${encodeURIComponent(d.symbol)}`);
+      $$("#oc-symbols button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.symbol === d.symbol)));
+      setExpiries(d.expiries ?? [d.expiry], d.expiry);
+      $("#oc-import").hidden = true;
+      $("#oc-import-btn").setAttribute("aria-expanded", "false");
+      render();
+      return `Imported ${d.symbol} (${d.rows?.length ?? 0} strikes shown).`;
+    },
+  });
 }
 
 function render() {
@@ -37,8 +81,8 @@ function render() {
   const pts = d.expected_move_pct && spot ? (spot * d.expected_move_pct) / 100 : null;
 
   const kpis = h("div", { class: "kpi-grid" },
-    kpi("Spot", number(spot), `${d.symbol} · ATM ${integer(d.atm_strike)}`),
-    kpi("Put-call ratio", number(d.pcr), h("span", {}, toneTag(d.pcr_tone, d.pcr_tone === "positive" ? "Bullish tilt" : d.pcr_tone === "negative" ? "Bearish tilt" : "Balanced"),
+    kpi("Spot", number(spot), d.spot_estimated ? "Estimated from option prices" : `${d.symbol} · ATM ${integer(d.atm_strike)}`),
+    kpi("Put-call ratio", number(d.pcr), h("span", {}, toneTag(d.pcr_tone, pcrLabel(d.pcr)),
       d.pcr_volume ? ` · Vol PCR ${number(d.pcr_volume)}` : "")),
     kpi("Max pain", integer(d.max_pain), mpGap === null ? "" : Math.abs(mpGap) < 0.05 ? "At spot" : `${mpGap > 0 ? "+" : "−"}${Math.abs(mpGap).toFixed(1)}% from spot`),
     kpi("Expected move", d.expected_move_pct ? `±${number(d.expected_move_pct)}%` : "—", pts ? `±${integer(pts)} pts by expiry (ATM straddle ${number(d.atm_straddle)})` : ""),
@@ -67,7 +111,11 @@ function render() {
       h("p", { class: "muted" }, "Build-up: price and OI both up = long build-up; price down, OI up = short build-up; price up, OI down = short covering; both down = long unwinding.")),
     h("div", { class: "table-wrap" }, chainTable(d)));
 
-  mount($("#oc-body"), kpis, h("div", { class: "grid-2 grid-2--wide-left" }, chartCard, summary), chainCard);
+  const imported = String(d.source ?? "").startsWith("Imported");
+  const banner = h("div", { class: `source-banner${imported ? " source-banner--import" : ""}` },
+    h("span", {}, imported ? "📄 " : "● ", d.source ?? ""),
+    imported ? h("button", { type: "button", class: "link-btn", onclick: () => toggleImport(true) }, "Import a newer file") : null);
+  mount($("#oc-body"), banner, kpis, h("div", { class: "grid-2 grid-2--wide-left" }, chartCard, summary), chainCard);
   segmented($("#oc-mode"), "mode", (m) => { ui.mode = m; render(); });
 }
 
@@ -118,9 +166,19 @@ function chainTable(d) {
   ], d.rows ?? [], { label: `${d.symbol} option chain, calls left and puts right`, rowClass: (r) => (r.is_atm ? "atm-row" : "") });
 }
 
+function toggleImport(force) {
+  const panel = $("#oc-import");
+  const open = force ?? panel.hidden;
+  if (open && !panel.firstChild) panel.append(importPanel());
+  panel.hidden = !open;
+  $("#oc-import-btn").setAttribute("aria-expanded", String(open));
+  if (open) panel.scrollIntoView({ block: "nearest" });
+}
+
 function wire() {
   if (ui.wired) return;
   ui.wired = true;
+  $("#oc-import-btn").addEventListener("click", () => toggleImport());
   ui.selectSym = segmented($("#oc-symbols"), "symbol", (s) => go("options", s));
   $("#oc-stock-form").addEventListener("submit", (e) => {
     e.preventDefault();

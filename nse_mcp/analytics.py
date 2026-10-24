@@ -192,7 +192,8 @@ def option_chain_analysis(payload: Any, symbol: str, expiry: str | None = None, 
         summary.append(f"Biggest put open interest is at {support[0]['strike']:,.0f}, which acts as support.")
     if mp is not None and spot:
         gap = (mp - spot) / spot * 100
-        summary.append(f"Max pain is {mp:,.0f} ({gap:+.1f}% from spot), where option buyers lose the most at expiry.")
+        where = "right at the spot price" if abs(gap) < 0.05 else f"{gap:+.1f}% from spot"
+        summary.append(f"Max pain is {mp:,.0f} ({where}), where option buyers lose the most at expiry.")
     if expected_move_pct:
         summary.append(f"The at-the-money straddle prices in a move of about ±{expected_move_pct}% by expiry.")
 
@@ -266,11 +267,21 @@ def fii_dii_summary(rows: Any) -> dict[str, Any]:
     return out
 
 
+def day_from_history(entry: dict[str, Any]) -> list[dict[str, Any]]:
+    """Rebuild NSE-style rows from a saved history entry, for fii_dii_summary()."""
+    return [{"category": "FII/FPI", "date": entry["date"], "buyValue": entry.get("fii_buy"), "sellValue": entry.get("fii_sell"),
+             "netValue": entry.get("fii_net")},
+            {"category": "DII", "date": entry["date"], "buyValue": entry.get("dii_buy"), "sellValue": entry.get("dii_sell"),
+             "netValue": entry.get("dii_net")}]
+
+
 def merge_history(history: list[dict[str, Any]], day: dict[str, Any], keep: int = 120) -> list[dict[str, Any]]:
     """Add one day's FII/DII figures to a history list (deduped by date, oldest first)."""
     if not day.get("date"):
         return history
-    entry = {"date": day["date"], "fii_net": (day.get("fii") or {}).get("net"), "dii_net": (day.get("dii") or {}).get("net")}
+    fii, dii = day.get("fii") or {}, day.get("dii") or {}
+    entry = {"date": day["date"], "fii_net": fii.get("net"), "dii_net": dii.get("net"),
+             "fii_buy": fii.get("buy"), "fii_sell": fii.get("sell"), "dii_buy": dii.get("buy"), "dii_sell": dii.get("sell")}
     by_date = {h["date"]: h for h in history}
     by_date[entry["date"]] = entry
     ordered = sorted(by_date.values(), key=lambda h: _parse_date(h["date"]) or date.min)

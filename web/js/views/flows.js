@@ -1,7 +1,8 @@
-import { callTool } from "../api.js";
+import { callTool, uploadCsv } from "../api.js";
+import { importer, nseLink } from "../importer.js";
 import { $, empty, h, mount } from "../dom.js";
 import { croreSigned, direction, number } from "../format.js";
-import { hoverTip, kpi, legend, section, table, tipRows } from "../ui.js";
+import { hoverTip, kpi, legend, table, tipRows } from "../ui.js";
 
 const ui = { data: null, wired: false, loaded: false };
 const crore = croreSigned;
@@ -54,17 +55,54 @@ function history(f) {
       kpi(`FII, last ${rows.length} days`, h("span", { class: direction(sum("fii_net")) }, crore(sum("fii_net")))),
       kpi(`DII, last ${rows.length} days`, h("span", { class: direction(sum("dii_net")) }, crore(sum("dii_net"))))),
     legend([["FII / FPI net", "var(--series-1)"], ["DII net", "var(--series-2)"]]),
-    h("div", { class: "fb", role: "group", "aria-label": "Daily FII and DII net flows" },
+    h("div", { class: `fb${rows.length > 12 ? " fb--dense" : ""}`, role: "group", "aria-label": "Daily FII and DII net flows" },
       h("div", { class: "fb__zero", style: `top:calc(var(--fb-plot) * ${zero / 100})` }), cols),
     tableWrap,
   ];
 }
 
+function importPanel() {
+  return importer({
+    title: "Import FII / DII data from NSE",
+    intro: "NSE doesn't allow automated access to this report, but you can download it yourself and drop it here. Each import adds to your history.",
+    steps: [
+      h("span", {}, "Open ", nseLink("https://www.nseindia.com/reports/fii-dii", "NSE's FII/DII report"), " in your browser."),
+      "Click the CSV download icon next to the table.",
+      "Drop the file here. Repeat on later days to grow the chart.",
+    ],
+    async onFile(file) {
+      const d = await uploadCsv("api/import/fii-dii", file);
+      show(d);
+      $("#flows-import").hidden = true;
+      $("#flows-import-btn").setAttribute("aria-expanded", "false");
+      return `Imported ${d.imported_days} day(s); latest ${d.date}.`;
+    },
+  });
+}
+
+function toggleImport(force) {
+  const panel = $("#flows-import");
+  const open = force ?? panel.hidden;
+  if (open && !panel.firstChild) panel.append(importPanel());
+  panel.hidden = !open;
+  $("#flows-import-btn").setAttribute("aria-expanded", String(open));
+}
+
+function show(f) {
+  mount($("#flows-today"), [
+    h("p", { class: `source-banner${String(f.source).startsWith("Imported") ? " source-banner--import" : ""}` }, `Source: ${f.source ?? "—"}`),
+    ...today(f)]);
+  mount($("#flows-history"), history(f));
+}
+
 async function load() {
-  const f = await section($("#flows-today"), "row", () => callTool("get_fii_dii"), today, 3);
-  if (f) mount($("#flows-history"), history(f));
-  else mount($("#flows-history"), empty("No data yet."));
   ui.loaded = true;
+  try {
+    show(await callTool("get_fii_dii"));
+  } catch (err) {
+    mount($("#flows-today"), h("p", { class: "notice" }, err.status === 404 ? "No FII/DII data yet. Import NSE's CSV to get started." : err.message), importPanel());
+    mount($("#flows-history"), empty("Your history chart appears here after the first import."));
+  }
 }
 
 export const flowsView = {
@@ -72,6 +110,7 @@ export const flowsView = {
   show() {
     if (!ui.wired) {
       ui.wired = true;
+      $("#flows-import-btn").addEventListener("click", () => toggleImport());
       $("#flows-table-btn").addEventListener("click", (e) => {
         const t = document.getElementById("flows-table");
         if (!t) return;

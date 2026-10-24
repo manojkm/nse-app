@@ -221,29 +221,46 @@ async def get_api_usage(ctx: Sources) -> Any:
 
 @tool("get_fii_dii", "FII / DII flows", "Flows",
       "Latest daily FII/FPI and DII buy, sell and net values (₹ crore) in the cash market, with a plain-English "
-      "summary and the history saved so far. Source: nseindia.com, which often blocks automated requests, "
-      "so this may be unavailable.")
+      "summary and saved history. Tries nseindia.com first (often blocked for automated requests), then the "
+      "most recent day imported from NSE's CSV download.")
 async def get_fii_dii(ctx: Sources) -> Any:
-    raw = await ctx.nse.fii_dii()
     try:
+        raw = await ctx.nse.fii_dii()
         day = analytics.fii_dii_summary(raw)
-    except ValueError as exc:
-        raise APIError(str(exc), status=502) from exc
-    history = ctx.save_fii_day(day)
-    return {**day, "history": history, "source": "nseindia.com"}
+        history = ctx.save_fii_day(day)
+        return {**day, "history": history, "source": "nseindia.com (live)"}
+    except (APIError, ValueError) as live_err:
+        history = ctx.fii_history()
+        latest = next((h for h in reversed(history) if h.get("fii_net") is not None or h.get("dii_net") is not None), None)
+        if not latest:
+            raise APIError(f"{live_err} No imported FII/DII data yet: download the CSV from NSE's FII/DII page "
+                           "and import it in the FII / DII tab.", status=404) from live_err
+        day = analytics.fii_dii_summary(analytics.day_from_history(latest))
+        return {**day, "history": history, "source": "Imported CSV"}
 
 
 @tool("get_option_chain", "Option chain analysis", "Derivatives",
       "Option chain for an index (NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY) or F&O stock, with put-call ratio, max pain, "
       "open-interest support/resistance, OI build-up per strike, ATM straddle and expected move. "
-      "Leave expiry empty for the nearest one. Source: nseindia.com, which often blocks automated requests, "
-      "so this may be unavailable.")
+      "Leave expiry empty for the nearest one. Tries nseindia.com first (often blocked for automated requests), "
+      "then the latest CSV the user imported from NSE's option-chain page.")
 async def get_option_chain(ctx: Sources, symbol: str = "NIFTY", expiry: str = "") -> Any:
-    raw = await ctx.nse.option_chain(symbol)
+    sym = symbol.strip().upper()
     try:
-        return analytics.option_chain_analysis(raw, symbol, expiry or None) | {"source": "nseindia.com"}
+        raw = await ctx.nse.option_chain(sym)
+        source = "nseindia.com (live)"
+    except APIError as live_err:
+        rec = ctx.chain_import(sym)
+        if not rec:
+            raise APIError(f"No live data for {sym} and nothing imported yet. Download the option chain CSV from "
+                           "nseindia.com/option-chain and import it here.", status=404) from live_err
+        raw = rec["payload"]
+        source = f"Imported CSV ({rec.get('filename') or sym}, imported {rec.get('imported_at')})"
+    try:
+        result = analytics.option_chain_analysis(raw, sym, expiry or None)
     except ValueError as exc:
-        raise APIError(f"{exc} Is {symbol.upper()} in the F&O segment?", status=404) from exc
+        raise APIError(f"{exc} Is {sym} in the F&O segment?", status=404) from exc
+    return result | {"source": source, "spot_estimated": not bool(analytics.normalize_option_chain(raw)[1])}
 
 
 # ---- Stock insights ----

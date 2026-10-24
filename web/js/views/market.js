@@ -74,7 +74,8 @@ function loadBreadth() {
 function loadFlowsMini() {
   // nseindia.com often declines automated requests; show that calmly rather than as an error.
   return section($("#flows-mini"), "row", () => callTool("get_fii_dii").catch((err) => ({ unavailable: err.message })), (f) => {
-    if (f.unavailable) return [h("p", { class: "muted" }, "FII/DII data isn't available right now."), h("p", { class: "source-note" }, f.unavailable)];
+    if (f.unavailable) return [h("p", { class: "muted" }, "No FII/DII data yet."),
+      h("a", { class: "btn btn--ghost", href: "#/flows" }, "Import NSE's FII/DII CSV →")];
     const tile = (label, v) => h("div", { class: "flow-mini" },
       h("span", { class: "kpi__label" }, label),
       h("span", { class: `flow-mini__value ${direction(v?.net)}` }, croreSigned(v?.net)),
@@ -82,7 +83,7 @@ function loadFlowsMini() {
     return [
       h("div", { class: "flow-mini__row" }, tile("FII / FPI net", f.fii), tile("DII net", f.dii)),
       h("p", { class: "breadth__summary" }, (f.summary ?? []).join(" ")),
-      h("p", { class: "source-note" }, `As of ${f.date ?? "—"} · nseindia.com`),
+      h("p", { class: "source-note" }, `As of ${f.date ?? "—"} · ${f.source ?? "nseindia.com"}`),
     ];
   }, 3);
 }

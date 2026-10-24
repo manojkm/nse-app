@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -25,6 +27,38 @@ class Sources:
     official: NSEOfficial | NSEOfficialDemo  # NSE's official MCP servers
     history_file: Path | None = None  # where daily FII/DII figures are kept
     _fii_history: list[dict[str, Any]] = field(default_factory=list)
+    imports_dir: Path | None = None   # where imported option-chain CSVs are kept
+    _imports: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+    # ---- imported option chains (CSV downloaded from nseindia.com by the user)
+
+    def save_chain_import(self, symbol: str, record: dict[str, Any]) -> None:
+        record = {**record, "imported_at": time.strftime("%d-%b-%Y %H:%M")}
+        key = re.sub(r"[^A-Z0-9&]", "", symbol.upper()) or "UNKNOWN"
+        if self.imports_dir is None:
+            self._imports[key] = record
+            return
+        try:
+            self.imports_dir.mkdir(parents=True, exist_ok=True)
+            (self.imports_dir / f"option-chain-{key}.json").write_text(json.dumps(record), encoding="utf-8")
+        except OSError as exc:
+            logger.warning("Could not save imported option chain: %s", exc)
+            self._imports[key] = record
+
+    def chain_import(self, symbol: str) -> dict[str, Any] | None:
+        key = re.sub(r"[^A-Z0-9&]", "", symbol.upper())
+        if key in self._imports or self.imports_dir is None:
+            return self._imports.get(key)
+        try:
+            return json.loads((self.imports_dir / f"option-chain-{key}.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+
+    def chain_import_symbols(self) -> list[str]:
+        names = set(self._imports)
+        if self.imports_dir and self.imports_dir.is_dir():
+            names |= {p.stem.removeprefix("option-chain-") for p in self.imports_dir.glob("option-chain-*.json")}
+        return sorted(names)
 
     @property
     def demo(self) -> bool:
@@ -67,4 +101,5 @@ def create_sources(settings: Settings) -> Sources:
         NSESite(cache_ttl=settings.cache_ttl),
         NSEOfficial(cache_ttl=max(settings.cache_ttl, 300)),
         PROJECT_ROOT / "data" / "fii_dii_history.json",
+        imports_dir=PROJECT_ROOT / "data" / "imports",
     )

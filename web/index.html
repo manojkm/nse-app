@@ -265,7 +265,7 @@
             <h1 class="view-title">Option chain analytics</h1>
             <p class="muted">Open interest tells you where option sellers expect the market to stay.</p>
           </div>
-          <span class="badge badge--warn" title="NSE has no official API for option chains and often blocks automated requests, so this may be unavailable.">nseindia.com · may be unavailable</span>
+          <span class="badge" title="NSE blocks automated access to option chains. Download the CSV from nseindia.com and import it here.">Live or imported CSV</span>
         </div>
         <div class="options-toolbar">
           <div class="segmented" role="group" aria-label="Underlying" id="oc-symbols">
@@ -280,7 +280,9 @@
             <button class="btn" type="submit">Load</button>
           </form>
           <label class="select"><span class="visually-hidden">Expiry</span><select id="oc-expiry"></select></label>
+          <button type="button" class="btn btn--ghost" id="oc-import-btn" aria-expanded="false" aria-controls="oc-import">Import NSE CSV</button>
         </div>
+        <div id="oc-import" hidden></div>
       </section>
       <div id="oc-body" aria-busy="true"></div>
     </div>
@@ -293,15 +295,16 @@
             <h1 class="view-title">FII / DII activity</h1>
             <p class="muted">Cash-market buying and selling by foreign (FII/FPI) and domestic (DII) institutions, ₹ crore.</p>
           </div>
-          <span class="badge badge--warn" title="NSE has no official API for this and often blocks automated requests, so this may be unavailable.">nseindia.com · may be unavailable</span>
+          <button type="button" class="btn btn--ghost" id="flows-import-btn" aria-expanded="false" aria-controls="flows-import">Import NSE CSV</button>
         </div>
+        <div id="flows-import" hidden></div>
         <div id="flows-today" aria-busy="true"></div>
       </section>
       <section class="section card-surface" aria-labelledby="flows-hist-title">
         <div class="section__head section__head--row">
           <div>
             <h2 id="flows-hist-title">Daily net flows</h2>
-            <p class="muted">NSE publishes only the latest day, so history builds up each day you open the app.</p>
+            <p class="muted">History grows with every day you import (or load live, when NSE allows it).</p>
           </div>
           <button type="button" class="link-btn" id="flows-table-btn" aria-expanded="false">View as table</button>
         </div>
