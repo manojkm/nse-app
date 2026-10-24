@@ -94,6 +94,12 @@ class NSEOfficial:
     async def lookup(self, query: str) -> Any:
         return await self.call("bhavcopy", "search_symbols", {"query": query}, ttl=86400)
 
+    async def index_snapshot(self, date: str = "today", filter: str = "") -> Any:
+        return await self.call("bhavcopy", "get_index_snapshot", {"date": date, "filter": filter})
+
+    async def market_mood(self, date: str = "today") -> Any:
+        return await self.call("bhavcopy", "get_market_mood", {"date": date})
+
     async def aclose(self) -> None:
         return None
 
@@ -121,6 +127,12 @@ class NSEOfficialDemo:
 
     async def lookup(self, query: str) -> Any:
         return sample_data.lookup(query)
+
+    async def index_snapshot(self, date: str = "today", filter: str = "") -> Any:
+        return sample_data.index_snapshot()
+
+    async def market_mood(self, date: str = "today") -> Any:
+        return sample_data.market_mood()
 
     async def aclose(self) -> None:
         return None

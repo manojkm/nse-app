@@ -1,6 +1,6 @@
 import { callTool } from "../api.js";
 import { $, $$, empty, errorBox, h, mount, segmented, skeleton } from "../dom.js";
-import { compact, croreSigned, direction, integer, money, number, pct, toNum } from "../format.js";
+import { compact, croreSigned, direction, integer, money, number, pct, shortDate, toNum } from "../format.js";
 import { byExchange, commodity, stock } from "../normalize.js";
 import { go } from "../router.js";
 import { chip, nameCell, section, table, toneTag } from "../ui.js";
@@ -15,29 +15,59 @@ function loadIndices() {
   return section($("#indices"), "index", () => callTool("get_indices"), (data) => {
     const rows = (data?.indices ?? (Array.isArray(data) ? data : [])).filter((r) => r && r.name);
     if (!rows.length) return empty("Index data unavailable.");
-    return rows.map((r) => h("div", { class: "index-card" },
+    const asOf = data?.date ? `Close of ${shortDate(data.date, true)}` : "";
+    return rows.map((r) => h("div", { class: "index-card", title: [asOf, data?.source].filter(Boolean).join(" · ") },
       h("span", { class: "index-card__name" }, r.name),
       h("span", { class: "index-card__price num" }, number(r.price)),
-      h("span", { class: `index-card__chg ${direction(r.percentChange)}` }, `${pct(r.percentChange)}`)));
+      h("span", { class: "index-card__row" },
+        h("span", { class: `index-card__chg ${direction(r.percentChange)}` }, pct(r.percentChange)),
+        r.pe ? h("span", { class: "index-card__pe" }, `P/E ${number(r.pe)}`) : null)));
   }, 6);
 }
 
+const READING_TONE = { "broad advance": "positive", "broad decline": "negative", mixed: "neutral" };
+
+function breadthBlock(adv, dec, unch, label) {
+  const seg = (n, cls, name) => h("span", { class: `breadth__seg ${cls}`, style: `flex:${n}`, title: `${name}: ${integer(n)}` });
+  return [
+    h("div", { class: "breadth__nums" },
+      h("span", { class: "up" }, h("b", {}, integer(adv)), " advancing"),
+      h("span", { class: "muted" }, `${integer(unch)} unchanged`),
+      h("span", { class: "down" }, h("b", {}, integer(dec)), " declining")),
+    h("div", { class: "breadth__bar", role: "img", "aria-label": `${label}: ${adv} advancing, ${unch} unchanged, ${dec} declining` },
+      seg(adv, "breadth__seg--up", "Advancing"), seg(unch, "breadth__seg--flat", "Unchanged"), seg(dec, "breadth__seg--down", "Declining")),
+  ];
+}
+
 function loadBreadth() {
-  return section($("#breadth"), "row", () => callTool("get_market_breadth"), (b) => {
-    const adv = toNum(b.advances), dec = toNum(b.declines), unch = toNum(b.unchanged) || 0;
-    const total = adv + dec + unch;
-    if (!Number.isFinite(total) || !total) return empty("Breadth data unavailable.");
-    const seg = (n, cls, label) => h("span", { class: `breadth__seg ${cls}`, style: `flex:${n}`, title: `${label}: ${integer(n)}` });
-    return [
-      h("div", { class: "breadth__nums" },
-        h("span", { class: "up" }, h("b", {}, integer(adv)), " advancing"),
-        h("span", { class: "muted" }, `${integer(unch)} unchanged`),
-        h("span", { class: "down" }, h("b", {}, integer(dec)), " declining")),
-      h("div", { class: "breadth__bar", role: "img", "aria-label": `${adv} advancing, ${unch} unchanged, ${dec} declining` },
-        seg(adv, "breadth__seg--up", "Advancing"), seg(unch, "breadth__seg--flat", "Unchanged"), seg(dec, "breadth__seg--down", "Declining")),
-      h("p", { class: "breadth__summary" }, toneTag(b.tone, `A/D ${number(b.ad_ratio)}`), " ", b.summary ?? ""),
-      h("p", { class: "source-note" }, `Session ${b.date ?? ""} · ${integer(b.total_stocks)} stocks`),
-    ];
+  return section($("#breadth"), "row", async () => {
+    try { return { mood: await callTool("get_market_mood") }; } catch { return { breadth: await callTool("get_market_breadth") }; }
+  }, ({ mood, breadth }) => {
+    if (breadth) {
+      const adv = toNum(breadth.advances), dec = toNum(breadth.declines), unch = toNum(breadth.unchanged) || 0;
+      if (!Number.isFinite(adv + dec)) return empty("Breadth data unavailable.");
+      return [...breadthBlock(adv, dec, unch, "Stocks"),
+        h("p", { class: "breadth__summary" }, toneTag(breadth.tone, `A/D ${number(breadth.ad_ratio)}`), " ", breadth.summary ?? ""),
+        h("p", { class: "source-note" }, `Session ${breadth.date ?? ""}`)];
+    }
+    const sb = mood.stock_breadth, vix = mood.india_vix, ib = mood.index_breadth;
+    const out = [];
+    if (sb) {
+      out.push(...breadthBlock(toNum(sb.up), toNum(sb.down), toNum(sb.unchanged) || 0, "Stocks"),
+        h("p", { class: "breadth__summary" }, toneTag(READING_TONE[sb.reading] ?? "neutral", sb.reading ?? ""), " ",
+          `${Math.round(toNum(sb.up_pct))}% of ${integer(sb.stocks)} stocks rose${ib ? `; ${integer(ib.up)} of ${integer(ib.equity_indices)} indices were up` : ""}.`));
+    }
+    if (vix) {
+      const dir = vix.vs_1w_ago?.direction;
+      out.push(h("div", { class: "vix" },
+        h("div", {}, h("span", { class: "kpi__label" }, "India VIX (fear gauge)"),
+          h("div", { class: "vix__value" }, h("b", { class: "num" }, number(vix.level)), " ",
+            h("span", { class: direction(vix.change_1d_pct) }, pct(vix.change_1d_pct)))),
+        h("p", { class: "muted" },
+          `${dir ? `${dir[0].toUpperCase()}${dir.slice(1)} over the past week` : ""}${vix.range?.percentile !== undefined ? `; higher than on ${Math.round(vix.range.percentile)}% of days in the past year` : ""}. Higher VIX means traders expect bigger swings.`)));
+    }
+    out.push(h("p", { class: "source-note" }, `Session ${mood.date ?? ""} · NSE official · descriptive, not a forecast`));
+    return out.length > 1 ? out : empty("Breadth data unavailable.");
   }, 3);
 }
 

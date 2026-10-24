@@ -10,14 +10,14 @@ An **MCP server** and a **web dashboard** for Indian stock market data (NSE & BS
   - **FII / DII**: daily institutional flows with a running history chart.
   - **IPO & News**: open, upcoming and listed IPOs, plus market news.
 
-Based on [GirishKumarDV/Live-NSE-BSE-MCP](https://github.com/GirishKumarDV/Live-NSE-BSE-MCP), rebuilt on the official MCP Python SDK (v2) and extended from 14 to 26 tools.
+Based on [GirishKumarDV/Live-NSE-BSE-MCP](https://github.com/GirishKumarDV/Live-NSE-BSE-MCP), rebuilt on the official MCP Python SDK (v2) and extended from 14 to 27 tools.
 
 ## Data sources
 
 | Source | Used for | Key needed |
 |---|---|---|
 | [IndianAPI](https://indianapi.in/) | Quotes, company details, price history, analyst ratings, indices, IPOs, news, mutual funds | Yes (`ISE_API_KEY`) |
-| [NSE official MCP](https://www.nseindia.com/nse-mcp) | Market breadth, end-of-day history, volume analysis, peer comparison, corporate actions | No |
+| [NSE official MCP](https://www.nseindia.com/nse-mcp) | Index levels, India VIX, market breadth, end-of-day history, volume analysis, peer comparison, corporate actions | No |
 | nseindia.com website | FII/DII flows, option chains | No, but usually blocked (see below) |
 
 ## Getting FII/DII and option-chain data
@@ -136,6 +136,7 @@ Start `python -m nse_mcp http`, then add the server:
 | `get_analyst_view` | Consensus rating, rating breakdown, target price range and upside |
 | `get_volume_profile` | Point of control, value area, buy/sell volume by price |
 | `get_market_breadth` | Advances vs declines and A/D ratio |
+| `get_market_mood` | India VIX level and trend, stock and index breadth (NSE official) |
 | `compare_stocks` | Return and max drawdown for up to 10 symbols |
 | `get_corporate_actions` | Dividends, bonuses, splits |
 | `get_indices` / `get_ipos` / `get_market_news` / `get_api_usage` | Index levels, IPOs, news, your IndianAPI quota |
@@ -184,7 +185,7 @@ NSE publishes only the latest day's FII/DII numbers. Each time you open the FII/
 
 ```
 nse_mcp/
-  tools.py        the 26 tools (single source of truth for MCP + REST)
+  tools.py        the 27 tools (single source of truth for MCP + REST)
   analytics.py    option chain, FII/DII, volume profile, analyst, scorecard maths
   server.py       MCP server, REST API, static hosting
   sources.py      bundles the three data sources

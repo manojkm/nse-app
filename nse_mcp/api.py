@@ -15,6 +15,11 @@ from .config import Settings
 
 logger = logging.getLogger("nse_mcp.api")
 
+# Newer IndianAPI endpoints live on a second host. If the configured host says
+# "not found" for one of these, the client retries there once.
+ALT_BASE_URL = "https://analyst.indianapi.in"
+ALT_ENDPOINTS = {"indices", "ipo", "news", "usage"}
+
 
 class MarketData(Protocol):
     demo: bool
@@ -45,6 +50,7 @@ class IndianAPIClient:
         )
         self._cache_ttl = cache_ttl
         self._cache: dict[str, tuple[float, Any]] = {}
+        self._use_alt: set[str] = set()
 
     async def get(self, endpoint: str, params: dict[str, Any] | None = None) -> Any:
         params = {k: v for k, v in (params or {}).items() if v not in (None, "")}
@@ -54,12 +60,15 @@ class IndianAPIClient:
         if hit and now - hit[0] < self._cache_ttl:
             return hit[1]
 
-        try:
-            response = await self._http.get(endpoint.lstrip("/"), params=params)
-        except httpx.TimeoutException as exc:
-            raise APIError("IndianAPI did not respond in time. Try again shortly.") from exc
-        except httpx.HTTPError as exc:
-            raise APIError(f"Could not reach IndianAPI: {exc.__class__.__name__}") from exc
+        name = endpoint.strip("/")
+        response = await self._fetch(name, params, alt=name in self._use_alt)
+        if response.status_code == 404 and name in ALT_ENDPOINTS and name not in self._use_alt:
+            alt = await self._fetch(name, params, alt=True)
+            if alt.status_code < 400:
+                self._use_alt.add(name)
+                response = alt
+            elif alt.status_code == 404:
+                raise APIError(f"Your IndianAPI plan doesn't include the /{name} endpoint.", status=404)
 
         if response.status_code >= 400:
             raise APIError(_error_message(response), status=response.status_code)
@@ -72,6 +81,15 @@ class IndianAPIClient:
         if self._cache_ttl > 0:
             self._cache[key] = (now, data)
         return data
+
+    async def _fetch(self, name: str, params: dict[str, Any], alt: bool) -> httpx.Response:
+        url = f"{ALT_BASE_URL}/{name}" if alt else name
+        try:
+            return await self._http.get(url, params=params)
+        except httpx.TimeoutException as exc:
+            raise APIError("IndianAPI did not respond in time. Try again shortly.") from exc
+        except httpx.HTTPError as exc:
+            raise APIError(f"Could not reach IndianAPI: {exc.__class__.__name__}") from exc
 
     async def aclose(self) -> None:
         await self._http.aclose()

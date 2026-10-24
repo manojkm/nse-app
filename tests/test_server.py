@@ -22,7 +22,7 @@ EXPECTED_TOOLS = {
     # added on top of the reference project
     "get_indices", "get_market_breadth", "get_ipos", "get_market_news", "get_api_usage", "get_fii_dii",
     "get_option_chain", "get_volume_profile", "compare_stocks", "get_corporate_actions", "get_analyst_view",
-    "get_stock_scorecard",
+    "get_stock_scorecard", "get_market_mood",
 }
 
 
@@ -200,3 +200,28 @@ def test_nse_official_parser():
         _parse(result('{"error": "Unknown symbol"}'))
     with pytest.raises(APIError):
         _parse(result("boom", err=True))
+
+
+async def test_live_client_retries_new_endpoints_on_alt_host():
+    seen = []
+
+    def handler(request):
+        seen.append(str(request.url))
+        if request.url.host == "stock.indianapi.in":
+            return httpx.Response(404, json={"detail": "Not Found"})
+        return httpx.Response(200, json={"indices": []})
+
+    api = _client(handler, cache_ttl=0)
+    assert await api.get("indices") == {"indices": []}
+    assert seen == ["https://stock.indianapi.in/indices", "https://analyst.indianapi.in/indices"]
+    await api.get("indices")  # remembered: goes straight to the alt host
+    assert seen[-1] == "https://analyst.indianapi.in/indices" and len(seen) == 3
+    with pytest.raises(APIError):  # other endpoints never use the alt host
+        await api.get("stock", {"name": "x"})
+
+
+async def test_indices_prefer_nse_official():
+    data = await TOOLS["get_indices"].fn(demo_sources())
+    names = [r["name"] for r in data["indices"]]
+    assert names[0] == "Nifty 50" and names[1] == "India VIX"
+    assert data["source"].startswith("NSE official")

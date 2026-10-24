@@ -508,3 +508,24 @@ def lookup(query: str) -> dict[str, Any]:
     res = [{"symbol": r[0], "last_close": r[4], "pct_change": r[5], "last_date": "2026-10-23"}
            for r in _STOCKS if q in r[0].lower() or q in r[1].lower()]
     return {"count": len(res), "results": res}
+
+
+def index_snapshot() -> dict[str, Any]:
+    rows = [("Nifty 50", 24_853.15, 0.42, 22.1), ("Nifty Bank", 55_310.40, 0.71, 15.8), ("Nifty IT", 35_102.85, -1.12, 27.4),
+            ("Nifty Next 50", 67_120.30, 0.36, 24.9), ("NIFTY Midcap 100", 57_420.30, 0.95, 33.2), ("NIFTY Smallcap 100", 18_210.75, 1.21, 29.6),
+            ("Nifty Auto", 25_904.10, 1.54, 26.0), ("Nifty Pharma", 22_410.55, -0.22, 35.1)]
+    return {"date": "2026-10-23", "indices": [
+        {"indexName": n, "close": c, "pctChange": p, "pointsChange": round(c * p / (100 + p), 2), "pe": pe, "date": "2026-10-23"}
+        for n, c, p, pe in rows]}
+
+
+def market_mood() -> dict[str, Any]:
+    return {
+        "date": "2026-10-23",
+        "benchmarks": {"Nifty 50": {"close": 24_853.15, "change_pct": 0.42}},
+        "index_breadth": {"up": 98, "down": 46, "unchanged": 0, "up_pct": 68.1, "reading": "broad advance", "equity_indices": 144},
+        "stock_breadth": {"up": 1_486, "down": 851, "unchanged": 75, "up_pct": 61.6, "reading": "broad advance", "stocks": 2_412},
+        "india_vix": {"level": 12.84, "change_1d_pct": -3.1,
+                      "vs_1w_ago": {"change_pct": -6.2, "direction": "falling"}, "vs_1m_ago": {"change_pct": -11.4, "direction": "falling"},
+                      "range": {"min": 9.15, "max": 27.89, "mean": 14.2, "percentile": 31.0}},
+    }

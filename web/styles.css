@@ -555,3 +555,8 @@ a.news__title:hover { color: var(--accent); text-decoration: underline; }
 }
 .legend__swatch--block[style*="--va"] { outline: 1px solid var(--accent); outline-offset: -1px; }
 .section > *, .options-toolbar > * { min-width: 0; }
+.index-card__row { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+.index-card__pe { font-size: 0.72rem; color: var(--text-3); white-space: nowrap; }
+.vix { display: grid; gap: 4px; padding: 12px 14px; border-radius: 10px; background: var(--surface-2); }
+.vix__value { font-size: 1.1rem; }
+.vix p { font-size: 0.82rem; }

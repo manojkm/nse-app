@@ -150,9 +150,42 @@ async def search_mutual_funds(ctx: Sources, query: str) -> Any:
 
 # ---- Market pulse (IndianAPI + NSE official) ----
 
-@tool("get_indices", "Market indices", "Market", "Live levels and % change for NIFTY 50, SENSEX, BANK NIFTY, sector indices and India VIX.")
+KEY_INDICES = ["Nifty 50", "Nifty Bank", "Nifty Next 50", "Nifty IT", "Nifty Midcap 100", "Nifty Smallcap 100",
+               "Nifty Financial Services", "Nifty Auto", "Nifty Pharma", "Nifty FMCG", "Nifty Metal"]
+
+
+@tool("get_indices", "Market indices", "Market",
+      "Latest close and % change for key NSE indices (NIFTY 50, BANK, IT, Midcap, Smallcap, sectors) plus India VIX, "
+      "with P/E. From NSE's official end-of-day data; falls back to IndianAPI.")
 async def get_indices(ctx: Sources) -> Any:
-    return await ctx.indian.get("indices")
+    try:
+        snap = await ctx.official.index_snapshot("today", "")
+        rows = {str(r.get("indexName", "")).lower(): r for r in (snap or {}).get("indices", []) if isinstance(r, dict)}
+        picked = [rows[n.lower()] for n in KEY_INDICES if n.lower() in rows]
+        if not picked:
+            raise APIError("No index data from NSE.")
+        out = [{"name": r["indexName"], "price": r.get("close"), "percentChange": r.get("pctChange"),
+                "netChange": r.get("pointsChange"), "pe": r.get("pe")} for r in picked]
+        try:
+            vix = (await ctx.official.market_mood("today")).get("india_vix") or {}
+            if vix.get("level") is not None:
+                out.insert(1, {"name": "India VIX", "price": vix["level"], "percentChange": vix.get("change_1d_pct")})
+        except Exception:  # noqa: BLE001 - VIX is a nice-to-have
+            pass
+        return {"indices": out, "date": snap.get("date"), "source": "NSE official (end of day)"}
+    except Exception as nse_err:  # noqa: BLE001
+        try:
+            data = await ctx.indian.get("indices")
+            return data | {"source": "IndianAPI"} if isinstance(data, dict) else data
+        except APIError:
+            raise APIError(f"Index data unavailable: {nse_err}", status=502) from nse_err
+
+
+@tool("get_market_mood", "Market mood", "Market",
+      "Factual read of the day: India VIX level and trend, how many indices and stocks rose vs fell, and benchmark changes. "
+      "Descriptive only, not a forecast. From NSE's official data.")
+async def get_market_mood(ctx: Sources, date: str = "today") -> Any:
+    return await ctx.official.market_mood(date or "today")
 
 
 @tool("get_market_breadth", "Market breadth", "Market",
